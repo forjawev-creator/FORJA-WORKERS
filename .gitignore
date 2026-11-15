@@ -1,0 +1,26 @@
+# Dependencies and generated output
+node_modules/
+dist/
+coverage/
+__pycache__/
+*.pyc
+# All local credentials, CRM records, sessions, recordings and runtime state
+.env
+.env.*
+!.env.example
+data/
+backups/
+recordings/
+fixtures/*.wav
+fixtures/*.mp3
+fixtures/*.pcm
+fixtures/*.alaw
+*.log
+*.tmp
+*.bak
+*.corrupt*
+*.zip
+test_circuit_tmp/
+test_audit/
+.DS_Store
+Thumbs.db
