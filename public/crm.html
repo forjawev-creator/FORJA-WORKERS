@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <script src="/control-auth.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus Leads CRM • Prospección Multiproducto</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --card-bg: #131c2e;
+      --card-border: #1e293b;
+      --card-hover: #1e2c45;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --accent-green: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-red: #ef4444;
+      --accent-purple: #8b5cf6;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --col-width: 320px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background: #0d1527;
+      border-bottom: 1px solid var(--card-border);
+      padding: 1rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .brand-logo {
+      width: 38px;
+      height: 38px;
+      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.25rem;
+      box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+    }
+    .brand h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: -0.02em; }
+    .brand span { font-size: 0.75rem; color: var(--text-muted); display: block; }
+
+    .header-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      padding: 0.5rem 0.9rem;
+      border-radius: 8px;
+      font-size: 0.825rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      border: 1px solid transparent;
+      text-decoration: none;
+      transition: all 0.15s ease;
+    }
+    .btn-primary { background: var(--primary); color: white; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-outline { background: transparent; border-color: var(--card-border); color: var(--text-main); }
+    .btn-outline:hover { background: var(--card-hover); border-color: #334155; }
+    .btn-success { background: var(--accent-green); color: white; }
+    .btn-success:hover { filter: brightness(1.1); }
+    .btn-danger { background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; }
+    .btn-danger:hover { background: rgba(239, 68, 68, 0.3); }
+
+    /* Stats strip */
+    .stats-strip {
+      background: #0f182c;
+      border-bottom: 1px solid var(--card-border);
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .metrics-group {
+      display: flex;
+      align-items: center;
+      gap: 1.5rem;
+      flex-wrap: wrap;
+    }
+    .metric-badge {
+      display: flex;
+      align-items: baseline;
+      gap: 0.4rem;
+    }
+    .metric-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+    .metric-val { font-size: 1.1rem; font-weight: 700; color: #38bdf8; }
+    .metric-val.green { color: var(--accent-green); }
+    .metric-val.amber { color: var(--accent-amber); }
+    .metric-val.purple { color: var(--accent-purple); }
+
+    .filters-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    select, input[type="text"] {
+      background: #172339;
+      border: 1px solid #29384d;
+      color: var(--text-main);
+      padding: 0.45rem 0.75rem;
+      border-radius: 6px;
+      font-size: 0.825rem;
+      outline: none;
+    }
+    select:focus, input[type="text"]:focus {
+      border-color: var(--primary);
+    }
+
+    /* Board container */
+    .kanban-wrapper {
+      flex: 1;
+      padding: 1.5rem;
+      overflow-x: auto;
+      display: flex;
+      gap: 1.25rem;
+      align-items: flex-start;
+    }
+
+    /* Kanban column */
+    .kanban-col {
+      width: var(--col-width);
+      min-width: var(--col-width);
+      background: #10192a;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 180px);
+    }
+    .col-header {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .col-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .col-count {
+      background: #1e293b;
+      font-size: 0.75rem;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      color: var(--text-muted);
+    }
+
+    .col-body {
+      padding: 0.75rem;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      flex: 1;
+    }
+
+    /* Lead card */
+    .lead-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 0.9rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      transition: transform 0.15s ease, border-color 0.15s ease;
+      cursor: pointer;
+    }
+    .lead-card:hover {
+      border-color: #3b82f6;
+      transform: translateY(-2px);
+      background: var(--card-hover);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+    .lead-name {
+      font-size: 0.9rem;
+      font-weight: 700;
+      color: #f1f5f9;
+      line-height: 1.25;
+    }
+    .lead-badges {
+      display: flex;
+      gap: 0.3rem;
+      flex-wrap: wrap;
+    }
+    .tag {
+      font-size: 0.65rem;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      background: #1e293b;
+      color: #94a3b8;
+    }
+    .tag.caliente { background: rgba(239, 68, 68, 0.2); color: #f87171; }
+    .tag.tibio { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .tag.frio { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
+    .tag.web { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .tag.noweb { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+    .tag.cercano { background: rgba(245, 158, 11, 0.2); color: #fcd34d; border: 1px solid rgba(245, 158, 11, 0.35); }
+    .tag.formal { background: rgba(59, 130, 246, 0.2); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.35); }
+    .tag.sent-positivo { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .tag.sent-neutral { background: rgba(148, 163, 184, 0.2); color: #cbd5e1; }
+    .tag.sent-dudoso { background: rgba(245, 158, 11, 0.2); color: #fde047; }
+    .tag.sent-frustrado { background: rgba(239, 68, 68, 0.2); color: #fca5a5; }
+
+    /* A/B Testing & Call Intelligence Panel */
+    .ab-panel {
+      background: #0b1325;
+      border-bottom: 1px solid #1e293b;
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      animation: fadeIn 0.2s ease-out;
+    }
+    .ab-header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+    .ab-title-group {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .ab-title-group h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #f1f5f9;
+    }
+    .ab-controls {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .ab-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1.2fr;
+      gap: 1rem;
+    }
+    @media (max-width: 1024px) {
+      .ab-grid { grid-template-columns: 1fr; }
+    }
+    .ab-card {
+      background: #111a2e;
+      border: 1px solid #1e2d48;
+      border-radius: 10px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .ab-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #1e2d48;
+      padding-bottom: 0.5rem;
+    }
+    .ab-card-title {
+      font-size: 0.88rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+    .ab-kpi-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.6rem;
+    }
+    .ab-kpi-box {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 0.5rem 0.65rem;
+    }
+    .ab-kpi-label {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+    .ab-kpi-num {
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #f8fafc;
+    }
+    .ab-winner-card {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.9));
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    .ab-table-wrapper {
+      max-height: 220px;
+      overflow-y: auto;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+      background: #0d1527;
+    }
+    .ab-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+      text-align: left;
+    }
+    .ab-table th {
+      background: #131c2e;
+      padding: 6px 10px;
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 1px solid #1e293b;
+      position: sticky;
+      top: 0;
+    }
+    .ab-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+    }
+    .ab-table tr:hover { background: rgba(255, 255, 255, 0.02); }
+
+    .lead-info {
+      font-size: 0.775rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+    }
+    .lead-info span { display: flex; align-items: center; gap: 0.35rem; }
+    .lead-info strong { color: #cbd5e1; }
+
+    .card-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 0.5rem;
+      margin-top: 0.25rem;
+    }
+    .card-actions .btn-sm {
+      padding: 3px 8px;
+      font-size: 0.725rem;
+      border-radius: 6px;
+    }
+
+    /* Modal Backdrop */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.75);
+      backdrop-filter: blur(4px);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      padding: 1rem;
+    }
+    .modal {
+      background: #131c2e;
+      border: 1px solid #29384d;
+      border-radius: 14px;
+      width: 100%;
+      max-width: 600px;
+      max-height: 90vh;
+      overflow-y: auto;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.6);
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--card-border);
+      padding-bottom: 0.75rem;
+    }
+    .modal-header h2 { font-size: 1.1rem; }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.5rem;
+      cursor: pointer;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .form-group label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: #cbd5e1;
+    }
+    textarea {
+      background: #0d1527;
+      border: 1px solid #29384d;
+      color: var(--text-main);
+      padding: 0.75rem;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      min-height: 120px;
+      resize: vertical;
+    }
+    textarea:focus { border-color: var(--primary); outline: none; }
+
+    /* Line status bars */
+    .line-card {
+      background: #0c1424;
+      border: 1px solid #1e293b;
+      padding: 0.75rem;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+    }
+    .line-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+    .progress-bar-bg {
+      background: #1e293b;
+      height: 8px;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #3b82f6, #10b981);
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <div class="brand-logo">⚡</div>
+      <div>
+        <h1>Nexus Leads CRM</h1>
+        <span>Motor Outbound & Prospección Multiproducto</span>
+      </div>
+    </div>
+    <div class="header-nav">
+      <a href="/index.html" class="btn btn-outline">🎙️ Monitor Voz & Llamadas</a>
+      <button class="btn btn-outline" id="btn-toggle-ab" onclick="toggleAbPanel()">⚖️ A/B Testing & Análisis</button>
+      <button class="btn btn-outline" onclick="openLinesModal()">📞 Líneas (Anti-Ban)</button>
+      <button class="btn btn-outline" onclick="openRobinsonModal()">🛡️ Robinson</button>
+      <button class="btn btn-primary" onclick="openImportModal()">📥 Importar Maps</button>
+    </div>
+  </header>
+
+  <!-- Metrics Strip -->
+  <div class="stats-strip">
+    <div class="metrics-group">
+      <div class="metric-badge">
+        <span class="metric-label">Leads Totales:</span>
+        <span class="metric-val" id="metric-total">0</span>
+      </div>
+      <div class="metric-badge">
+        <span class="metric-label">Llamadas Hoy:</span>
+        <span class="metric-val purple" id="metric-calls-today">0 / 90</span>
+      </div>
+      <div class="metric-badge">
+        <span class="metric-label">Tasa WhatsApp:</span>
+        <span class="metric-val green" id="metric-wa-rate">0%</span>
+      </div>
+      <div class="metric-badge">
+        <span class="metric-label">Apertura Muestras:</span>
+        <span class="metric-val amber" id="metric-open-rate">0%</span>
+      </div>
+      <div class="metric-badge">
+        <span class="metric-label">Bloqueados Robinson:</span>
+        <span class="metric-val" style="color: #f87171;" id="metric-robinson">0</span>
+      </div>
+    </div>
+
+    <div class="filters-bar">
+      <select id="filter-campania" onchange="loadLeads()">
+        <option value="">Todas las campañas</option>
+      </select>
+      <input type="text" id="filter-search" placeholder="Buscar negocio, tel o ciudad..." oninput="debounceLoad()">
+      <button class="btn btn-outline" onclick="loadAll()" title="Recargar tablero">🔄</button>
+    </div>
+  </div>
+
+  <!-- Quick Dispatch & Worker Orchestrator Bar -->
+  <div style="background: #090d16; padding: 0.6rem 1.5rem; display: flex; gap: 0.75rem; border-bottom: 1px solid #172339; align-items: center; flex-wrap: wrap;">
+    <span style="font-size: 0.775rem; color: #94a3b8; font-weight: 700;">ORQUESTADOR COMERCIAL:</span>
+    <button class="btn btn-success btn-sm" id="btn-orchestrator" onclick="toggleOrchestrator()">🚀 Iniciar Prospección Automática</button>
+    <button class="btn btn-outline btn-sm" id="btn-worker-call" onclick="toggleCallWorker()">📞 Worker Llamadas: <span id="status-worker-call" style="color: #94a3b8;">Inactivo</span></button>
+    <button class="btn btn-outline btn-sm" id="btn-worker-wa" onclick="toggleWhatsAppWorker()">💬 Worker WhatsApp: <span id="status-worker-wa" style="color: #94a3b8;">Inactivo</span></button>
+    <button class="btn btn-outline btn-sm" onclick="openWaWorkerModal()">⚙️ Configurar WhatsApp</button>
+    
+    <span style="border-left: 1px solid #1e293b; height: 18px; margin: 0 4px;"></span>
+    <span style="font-size: 0.75rem; color: #64748b; font-weight: 600;">MANUAL:</span>
+    <button class="btn btn-outline btn-sm" onclick="triggerNextCall()">📞 Llamar Siguiente</button>
+    <button class="btn btn-outline btn-sm" onclick="triggerNextWhatsApp()">💬 WhatsApp Siguiente</button>
+    <span style="margin-left: auto; font-size: 0.75rem; color: #64748b;" id="last-updated-text">Actualizado hace un momento</span>
+  </div>
+
+  <!-- A/B Testing & Conversation Intelligence Dashboard (Colapsable) -->
+  <div class="ab-panel" id="ab-panel-container">
+    <div class="ab-header-row">
+      <div class="ab-title-group">
+        <span style="font-size: 1.4rem;">⚖️</span>
+        <div>
+          <h2>A/B Testing & Inteligencia de Conversaciones</h2>
+          <span style="font-size: 0.75rem; color: var(--text-muted);">Comparativa de conversión: Guion A (Cercano / Maps) vs Guion B (Formal / Consultoría)</span>
+        </div>
+      </div>
+      <div class="ab-controls">
+        <label style="font-size: 0.775rem; color: #cbd5e1; font-weight: 600;">Guion Activo en Llamadas:</label>
+        <select id="ab-variant-select" onchange="changeScriptVariant(this.value)" style="border-color: #3b82f6; font-weight: 700;">
+          <option value="cercano">🟡 Variante A: Cercano (Tú / Google Maps)</option>
+          <option value="formal">🔵 Variante B: Formal (Usted / Consultoría)</option>
+          <option value="ab_test">⚖️ Modo A/B Test (50% / 50% Alterno)</option>
+        </select>
+        <span id="mobile-url-badge" style="font-size: 0.72rem; padding: 4px 8px; border-radius: 6px; background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3);">
+          📱 IP Móvil: <strong>10.24.132.220:3000</strong>
+        </span>
+        <button class="btn btn-outline btn-sm" onclick="loadAbMetrics()" title="Actualizar métricas A/B">🔄</button>
+      </div>
+    </div>
+
+    <!-- Comparativa lado a lado -->
+    <div class="ab-grid">
+      <!-- Columna Guion A -->
+      <div class="ab-card" style="border-top: 3px solid #f59e0b;">
+        <div class="ab-card-header">
+          <div class="ab-card-title" style="color: #fbbf24;">
+            <span>🟡</span> <span>Guion A: Cercano (Maps)</span>
+          </div>
+          <span class="tag cercano" id="ab-tag-cercano">Activo</span>
+        </div>
+        <p style="font-size: 0.75rem; color: #94a3b8; line-height: 1.35;">
+          Tono de tú a tú, menciona ficha de Google Maps sin web y ofrece muestra previa rápida de 1 min.
+        </p>
+        <div class="ab-kpi-row">
+          <div class="ab-kpi-box">
+            <div class="ab-kpi-label">Llamadas</div>
+            <div class="ab-kpi-num" id="ab-cercano-calls">0</div>
+          </div>
+          <div class="ab-kpi-box">
+            <div class="ab-kpi-label">Autorizó WA</div>
+            <div class="ab-kpi-num" style="color: #34d399;" id="ab-cercano-wa">0 (0%)</div>
+          </div>
+          <div class="ab-kpi-box">
+            <div class="ab-kpi-label">Apertura Web</div>
+            <div class="ab-kpi-num" style="color: #f59e0b;" id="ab-cercano-open">0 (0%)</div>
+          </div>
+          <div class="ab-kpi-box">
+            <div class="ab-kpi-label">Duración Media</div>
+            <div class="ab-kpi-num" id="ab-cercano-duration">0s</div>
+          </div>
+        </div>
+        <div style="font-size: 0.725rem; color: #94a3b8;" id="ab-cercano-objections">
+          <strong>Objeciones top:</strong> Ninguna
+        </div>
+      </div>
+
+      <!-- Columna Guion B -->
+      <div class="ab-card" style="border-top: 3px solid #3b82f6;">
+        <div class="ab-card-header">
+          <div class="ab-card-title" style="color: #60a5fa;">
+            <span>🔵</span> <span>Guion B: Formal (Consultoría)</span>
+          </div>
+          <span class="tag formal" id="ab-tag-formal">Alternativo</span>
+        </div>
+        <p style="font-size: 0.75rem; color: #94a3b8; line-height: 1.35;">
+          Trato de usted, auditoría de presencia digital corporativa y muestra orientada a captación móvil.
+        </p>
+        <div class="ab-kpi-row">
+          <div class="ab-kpi-box">
+            <div class="ab-kpi-label">Llamadas</div>
+            <div class="ab-kpi-num" id="ab-formal-calls">0</div>
+          </div>
+          <div class="ab-kpi-box">
+            <div class="ab-kpi-label">Autorizó WA</div>
+            <div class="ab-kpi-num" style="color: #34d399;" id="ab-formal-wa">0 (0%)</div>
+          </div>
+          <div class="ab-kpi-box">
+            <div class="ab-kpi-label">Apertura Web</div>
+            <div class="ab-kpi-num" style="color: #f59e0b;" id="ab-formal-open">0 (0%)</div>
+          </div>
+          <div class="ab-kpi-box">
+            <div class="ab-kpi-label">Duración Media</div>
+            <div class="ab-kpi-num" id="ab-formal-duration">0s</div>
+          </div>
+        </div>
+        <div style="font-size: 0.725rem; color: #94a3b8;" id="ab-formal-objections">
+          <strong>Objeciones top:</strong> Ninguna
+        </div>
+      </div>
+
+      <!-- Veredicto e Insights IA -->
+      <div class="ab-winner-card">
+        <div style="display: flex; align-items: center; justify-content: space-between;">
+          <strong style="font-size: 0.88rem; color: #f8fafc; display: flex; align-items: center; gap: 0.35rem;">
+            <span>🏆</span> <span>Veredicto y Recomendación IA</span>
+          </strong>
+          <span id="ab-winner-badge" class="tag" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8; font-size: 0.7rem;">
+            Recopilando datos
+          </span>
+        </div>
+        <div style="font-size: 0.78rem; color: #cbd5e1; background: rgba(0, 0, 0, 0.3); border-radius: 8px; padding: 0.75rem; border: 1px solid rgba(255, 255, 255, 0.05); line-height: 1.45;" id="ab-recommendation-box">
+          Cargando análisis comparativo...
+        </div>
+        <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: center; font-size: 0.72rem; color: #64748b;">
+          <span>Tracking en tiempo real</span>
+          <a href="#ab-intelligence-table" style="color: #38bdf8; text-decoration: none;">Ver análisis de llamadas ↓</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feed de Inteligencia y Fricción de Llamadas Recientes -->
+    <div>
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+        <span style="font-size: 0.8rem; font-weight: 700; color: #cbd5e1; display: flex; align-items: center; gap: 0.4rem;">
+          <span>🧠</span> <span>Inteligencia de Conversación: Sentimiento, Objeciones y Puntos de Fricción</span>
+        </span>
+        <span style="font-size: 0.725rem; color: #64748b;" id="ab-analyses-count">0 llamadas analizadas</span>
+      </div>
+      <div class="ab-table-wrapper" id="ab-intelligence-table">
+        <table class="ab-table">
+          <thead>
+            <tr>
+              <th>Empresa / Teléfono</th>
+              <th>Guion</th>
+              <th>Sentimiento</th>
+              <th>Objeción Detectada</th>
+              <th>Punto de Fricción Exacto</th>
+              <th>Puntuación</th>
+              <th>Resumen Ejecutivo</th>
+            </tr>
+          </thead>
+          <tbody id="ab-analyses-tbody">
+            <tr>
+              <td colspan="7" style="text-align: center; color: #64748b; padding: 1.5rem;">
+                No hay análisis de llamadas todavía. Inicia una llamada para que la IA extraiga el sentimiento y objeciones.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Kanban Board -->
+  <div class="kanban-wrapper" id="kanban-board">
+    <!-- Columnas generadas dinámicamente -->
+  </div>
+
+  <!-- MODAL: Importar Leads -->
+  <div class="modal-backdrop" id="modal-import">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📥 Importar Leads (Google Maps)</h2>
+        <button class="modal-close" onclick="closeModals()">&times;</button>
+      </div>
+      <p style="font-size: 0.8rem; color: #94a3b8;">
+        Pega un array JSON o formato CSV. Deduplicación por <code>place_id</code> y teléfono español normalizado (+34). Se excluyen automáticamente números en Lista Robinson.
+      </p>
+      <div class="form-group">
+        <label>Campaña destino:</label>
+        <select id="import-campania-select"></select>
+      </div>
+      <div class="form-group">
+        <label>Datos (JSON o CSV con cabeceras):</label>
+        <textarea id="import-data" placeholder='[
+  {
+    "empresa_nombre": "Fontanería Hermanos Gómez",
+    "telefono": "910 12 34 56",
+    "categoria_maps": "Fontanero",
+    "ciudad": "Madrid",
+    "tiene_web_previa": false,
+    "place_id": "ChIJxyz12345"
+  }
+]'></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button class="btn btn-outline" onclick="closeModals()">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitImport()">Procesar e Importar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Líneas Telefónicas & Horarios -->
+  <div class="modal-backdrop" id="modal-lines">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📞 Control de Líneas & Cuotas Diarias</h2>
+        <button class="modal-close" onclick="closeModals()">&times;</button>
+      </div>
+      <div id="lines-list-container">
+        <!-- Renderizado dinámico de líneas -->
+      </div>
+      <div style="border-top: 1px solid #1e293b; padding-top: 1rem;" class="form-group">
+        <label>Política Anti-Ban:</label>
+        <p style="font-size: 0.775rem; color: #94a3b8;">
+          Máximo recomendado de 25-30 llamadas/día por línea telefónica con rotación round-robin para proteger los números contra bloqueos de operadoras.
+        </p>
+      </div>
+      <div style="display: flex; justify-content: flex-end;">
+        <button class="btn btn-outline" onclick="closeModals()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Lista Robinson -->
+  <div class="modal-backdrop" id="modal-robinson">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>🛡️ Lista Robinson (Exclusión Comercial)</h2>
+        <button class="modal-close" onclick="closeModals()">&times;</button>
+      </div>
+      <p style="font-size: 0.8rem; color: #94a3b8;">
+        Cualquier número registrado aquí será bloqueado y descartado en llamadas y WhatsApp.
+      </p>
+      <div style="display: flex; gap: 0.5rem;">
+        <input type="text" id="new-robinson-phone" placeholder="+34 600..." style="flex: 1;">
+        <input type="text" id="new-robinson-motivo" placeholder="Motivo (ej: Oposición expresa)" style="flex: 1;">
+        <button class="btn btn-danger" onclick="addRobinsonEntry()">Añadir</button>
+      </div>
+      <div id="robinson-list-container" style="max-height: 250px; overflow-y: auto; margin-top: 1rem;">
+        <!-- Elementos Robinson -->
+      </div>
+      <div style="display: flex; justify-content: flex-end;">
+        <button class="btn btn-outline" onclick="closeModals()">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Reporte de Resultado de Llamada -->
+  <div class="modal-backdrop" id="modal-call-result">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>📞 Registrar Resultado de Llamada</h2>
+        <button class="modal-close" onclick="closeModals()">&times;</button>
+      </div>
+      <input type="hidden" id="call-result-lead-id">
+      <div class="form-group">
+        <label>Negocio:</label>
+        <input type="text" id="call-result-lead-name" readonly style="opacity: 0.8;">
+      </div>
+      <div class="form-group">
+        <label>Resultado de la conversación:</label>
+        <select id="call-result-select">
+          <option value="autorizo_whatsapp">✅ Autorizó muestra por WhatsApp</option>
+          <option value="no_contesta">⏳ No contesta / Ocupado</option>
+          <option value="buzon">📬 Saltó contestador / Buzón</option>
+          <option value="rechazo">❌ Rechazo / No le interesa</option>
+          <option value="numero_invalido">⚠️ Número erróneo / No existe</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Teléfono confirmado para WhatsApp (si difiere):</label>
+        <input type="text" id="call-result-confirmed-phone" placeholder="+34...">
+      </div>
+      <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 0.5rem;">
+        <input type="checkbox" id="call-result-add-robinson">
+        <label for="call-result-add-robinson" style="cursor: pointer; color: #f87171;">Añadir a Lista Robinson (No volver a llamar jamás)</label>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button class="btn btn-outline" onclick="closeModals()">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitCallResult()">Guardar y Actualizar Embudo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Configuración del Worker de WhatsApp -->
+  <div class="modal-backdrop" id="modal-wa-worker">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>💬 Configurar Worker de WhatsApp</h2>
+        <button class="modal-close" onclick="closeModals()">&times;</button>
+      </div>
+      <div class="form-group">
+        <label>Proveedor de Envío:</label>
+        <select id="wa-modal-provider">
+          <option value="mock">🧪 Simulación / Pruebas (Mock - Sin envío externo)</option>
+          <option value="webhook">🌐 Pasarela Webhook HTTP (Evolution API / BuilderBot / n8n / Baileys)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>URL del Webhook (POST JSON: <code>{ phone, message, leadId }</code>):</label>
+        <input type="text" id="wa-modal-webhook" placeholder="http://localhost:3002/api/whatsapp/send">
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem;">
+        <div class="form-group">
+          <label>Límite Diario:</label>
+          <input type="number" id="wa-modal-max-daily" value="50" style="background: #172339; border: 1px solid #29384d; color: var(--text-main); padding: 0.45rem; border-radius: 6px;">
+        </div>
+        <div class="form-group">
+          <label>Pausa Base (ms):</label>
+          <input type="number" id="wa-modal-delay" value="2000" style="background: #172339; border: 1px solid #29384d; color: var(--text-main); padding: 0.45rem; border-radius: 6px;">
+        </div>
+        <div class="form-group">
+          <label>Jitter (ms):</label>
+          <input type="number" id="wa-modal-jitter" value="1000" style="background: #172339; border: 1px solid #29384d; color: var(--text-main); padding: 0.45rem; border-radius: 6px;">
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Plantilla del Mensaje (<code>{{nombre}}</code>, <code>{{oficio}}</code>, <code>{{ciudad}}</code>, <code>{{enlace}}</code>):</label>
+        <textarea id="wa-modal-template"></textarea>
+      </div>
+      <div id="wa-modal-log" style="font-size: 0.75rem; color: #94a3b8; background: #0c1424; padding: 0.5rem 0.75rem; border-radius: 6px;"></div>
+      <div style="display: flex; justify-content: flex-end; gap: 0.5rem;">
+        <button class="btn btn-outline" onclick="closeModals()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveWaWorkerModal()">💾 Guardar Configuración</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const STAGES = [
+      { id: "nuevo", label: "📥 Nuevos (Maps)", color: "#94a3b8" },
+      { id: "cola_llamada", label: "📞 Cola de Llamada", color: "#38bdf8" },
+      { id: "llamado", label: "🗣️ Llamados", color: "#818cf8" },
+      { id: "cola_whatsapp", label: "💬 Cola WhatsApp", color: "#f59e0b" },
+      { id: "whatsapp_enviado", label: "📲 WhatsApp Enviado", color: "#10b981" },
+      { id: "interesado", label: "🔥 Interesados (Vieron Web)", color: "#ec4899" },
+      { id: "ganado", label: "🤝 Ganados / Cerrados", color: "#22c55e" },
+      { id: "descartado", label: "⛔ Descartados / Robinson", color: "#ef4444" },
+    ];
+
+    let currentLeads = [];
+    let currentCampanias = [];
+    let debounceTimer = null;
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    function sanitizeUrl(rawUrl) {
+      if (!rawUrl) return "#";
+      try {
+        const u = new URL(rawUrl, window.location.origin);
+        if (u.protocol === "http:" || u.protocol === "https:") {
+          return u.href;
+        }
+        return "#";
+      } catch {
+        return "#";
+      }
+    }
+
+    async function fetchJson(url, options = {}) {
+      const res = await fetch(url, options);
+      return res.json();
+    }
+
+    let abPanelVisible = true;
+
+    function toggleAbPanel() {
+      const panel = document.getElementById("ab-panel-container");
+      const btn = document.getElementById("btn-toggle-ab");
+      abPanelVisible = !abPanelVisible;
+      panel.style.display = abPanelVisible ? "flex" : "none";
+      btn.style.borderColor = abPanelVisible ? "#3b82f6" : "transparent";
+    }
+
+    async function changeScriptVariant(variant) {
+      try {
+        await fetchJson("/api/crm/script-variant", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ scriptVariant: variant }),
+        });
+        await loadAbMetrics();
+      } catch (e) {
+        alert("Error actualizando variante de guion: " + e.message);
+      }
+    }
+
+    async function loadAbMetrics() {
+      try {
+        const [metrics, variantInfo] = await Promise.all([
+          fetchJson("/api/crm/ab-metrics"),
+          fetchJson("/api/crm/script-variant"),
+        ]);
+
+        if (variantInfo && variantInfo.scriptVariant) {
+          document.getElementById("ab-variant-select").value = variantInfo.scriptVariant;
+          const isA = variantInfo.scriptVariant === "cercano";
+          const isB = variantInfo.scriptVariant === "formal";
+          const isAB = variantInfo.scriptVariant === "ab_test";
+
+          const tagCercano = document.getElementById("ab-tag-cercano");
+          const tagFormal = document.getElementById("ab-tag-formal");
+          if (tagCercano) tagCercano.textContent = isA ? "🟢 ACTIVO" : (isAB ? "⚖️ 50% A/B" : "⚪ Pausado");
+          if (tagFormal) tagFormal.textContent = isB ? "🟢 ACTIVO" : (isAB ? "⚖️ 50% A/B" : "⚪ Pausado");
+
+          const badgeIp = document.getElementById("mobile-url-badge");
+          if (badgeIp && variantInfo.publicBaseUrl) {
+            badgeIp.innerHTML = `📱 IP Móvil: <strong>${escapeHtml(variantInfo.publicBaseUrl.replace(/^https?:\/\//, ''))}</strong>`;
+          }
+        }
+
+        if (metrics) {
+          // Cercano
+          const c = metrics.cercano || {};
+          document.getElementById("ab-cercano-calls").textContent = c.totalCalls || 0;
+          document.getElementById("ab-cercano-wa").textContent = `${c.whatsappAuthorized || 0} (${c.authRate || 0}%)`;
+          document.getElementById("ab-cercano-open").textContent = `${c.proposalsOpened || 0} (${c.openRate || 0}%)`;
+          document.getElementById("ab-cercano-duration").textContent = `${c.avgDurationSeconds || 0}s`;
+
+          const cObjs = Object.entries(c.topObjections || {});
+          const cObjsText = cObjs.length > 0 ? cObjs.map(([k, v]) => `${k} (${v})`).join(", ") : "Ninguna detectada";
+          document.getElementById("ab-cercano-objections").innerHTML = `<strong>Objeciones top:</strong> ${escapeHtml(cObjsText)}`;
+
+          // Formal
+          const f = metrics.formal || {};
+          document.getElementById("ab-formal-calls").textContent = f.totalCalls || 0;
+          document.getElementById("ab-formal-wa").textContent = `${f.whatsappAuthorized || 0} (${f.authRate || 0}%)`;
+          document.getElementById("ab-formal-open").textContent = `${f.proposalsOpened || 0} (${f.openRate || 0}%)`;
+          document.getElementById("ab-formal-duration").textContent = `${f.avgDurationSeconds || 0}s`;
+
+          const fObjs = Object.entries(f.topObjections || {});
+          const fObjsText = fObjs.length > 0 ? fObjs.map(([k, v]) => `${k} (${v})`).join(", ") : "Ninguna detectada";
+          document.getElementById("ab-formal-objections").innerHTML = `<strong>Objeciones top:</strong> ${escapeHtml(fObjsText)}`;
+
+          // Veredicto
+          const badgeWinner = document.getElementById("ab-winner-badge");
+          if (metrics.winner === "cercano") {
+            badgeWinner.className = "tag cercano";
+            badgeWinner.textContent = "🏆 GANA GUION A (CERCANO)";
+          } else if (metrics.winner === "formal") {
+            badgeWinner.className = "tag formal";
+            badgeWinner.textContent = "🏆 GANA GUION B (FORMAL)";
+          } else if (metrics.winner === "empate") {
+            badgeWinner.className = "tag tibio";
+            badgeWinner.textContent = "⚖️ EMPATE TÉCNICO";
+          } else {
+            badgeWinner.className = "tag";
+            badgeWinner.textContent = "⏳ Recopilando datos";
+          }
+
+          document.getElementById("ab-recommendation-box").textContent =
+            metrics.recommendation || "Realiza más llamadas para acumular datos representativos de ambas variantes.";
+
+          // Feed de análisis
+          const list = metrics.recentAnalyses || [];
+          document.getElementById("ab-analyses-count").textContent = `${list.length} llamadas analizadas`;
+          const tbody = document.getElementById("ab-analyses-tbody");
+
+          if (list.length === 0) {
+            tbody.innerHTML = `
+              <tr>
+                <td colspan="7" style="text-align: center; color: #64748b; padding: 1.5rem;">
+                  No hay análisis de llamadas todavía. Inicia una llamada para que la IA extraiga el sentimiento y objeciones.
+                </td>
+              </tr>
+            `;
+          } else {
+            tbody.innerHTML = "";
+            list.forEach((item) => {
+              const tr = document.createElement("tr");
+              const sent = item.sentiment || "neutral";
+              const sentClass = sent === "positive" ? "sent-positivo" : (sent === "frustrated" ? "sent-frustrado" : (sent === "hesitant" ? "sent-dudoso" : "sent-neutral"));
+              const sentEmoji = sent === "positive" ? "😊 Positivo" : (sent === "frustrated" ? "😤 Frustrado" : (sent === "hesitant" ? "🤔 Dudoso" : "😐 Neutral"));
+              const scoreVal = item.score ? `${item.score}/10` : "-";
+
+              tr.innerHTML = `
+                <td><strong>${escapeHtml(item.company || "Cliente")}</strong><br><span style="color:#64748b;">${escapeHtml(item.phone || "")}</span></td>
+                <td><span class="tag ${item.variant === 'formal' ? 'formal' : 'cercano'}">${item.variant === 'formal' ? '🔵 Formal' : '🟡 Cercano'}</span></td>
+                <td><span class="tag ${sentClass}">${sentEmoji}</span></td>
+                <td><span style="color: #cbd5e1; font-weight: 600;">${escapeHtml(item.objection || 'Ninguna')}</span></td>
+                <td><span style="color: #f87171;">${escapeHtml(item.frictionPoint || 'Sin fricción')}</span></td>
+                <td><strong style="color: #38bdf8;">${scoreVal}</strong></td>
+                <td style="color: #cbd5e1; max-width: 280px; line-height: 1.3;">${escapeHtml(item.summary || '-')}</td>
+              `;
+              tbody.appendChild(tr);
+            });
+          }
+        }
+      } catch (e) {
+        console.warn("Error cargando métricas A/B:", e);
+      }
+    }
+
+    async function loadAll() {
+      await Promise.all([loadStats(), loadCampanias(), loadLeads(), loadAbMetrics()]);
+      document.getElementById("last-updated-text").textContent = "Actualizado: " + new Date().toLocaleTimeString();
+    }
+
+    async function loadStats() {
+      try {
+        const stats = await fetchJson("/api/crm/estadisticas");
+        document.getElementById("metric-total").textContent = stats.total_leads || 0;
+        document.getElementById("metric-calls-today").textContent = `${stats.llamadas_hoy} / ${stats.limite_hoy}`;
+        document.getElementById("metric-wa-rate").textContent = stats.tasa_autorizacion_whatsapp || "0%";
+        document.getElementById("metric-open-rate").textContent = stats.tasa_apertura_propuestas || "0%";
+        document.getElementById("metric-robinson").textContent = stats.total_robinson || 0;
+      } catch (e) {
+        console.error("Error loading stats:", e);
+      }
+    }
+
+    async function loadCampanias() {
+      try {
+        currentCampanias = await fetchJson("/api/crm/campanias");
+        const selFilter = document.getElementById("filter-campania");
+        const selImport = document.getElementById("import-campania-select");
+        
+        selFilter.innerHTML = '<option value="">Todas las campañas</option>';
+        selImport.innerHTML = '';
+
+        currentCampanias.forEach(c => {
+          const opt1 = document.createElement("option");
+          opt1.value = c.id;
+          opt1.textContent = c.nombre;
+          selFilter.appendChild(opt1);
+
+          const opt2 = document.createElement("option");
+          opt2.value = c.id;
+          opt2.textContent = c.nombre;
+          selImport.appendChild(opt2);
+        });
+      } catch (e) {
+        console.error("Error loading campanias:", e);
+      }
+    }
+
+    async function loadLeads() {
+      try {
+        const campaniaId = document.getElementById("filter-campania").value;
+        const q = document.getElementById("filter-search").value;
+        let url = `/api/crm/leads?`;
+        if (campaniaId) url += `campania_id=${encodeURIComponent(campaniaId)}&`;
+        if (q) url += `q=${encodeURIComponent(q)}&`;
+
+        currentLeads = await fetchJson(url);
+        renderKanban();
+      } catch (e) {
+        console.error("Error loading leads:", e);
+      }
+    }
+
+    function debounceLoad() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(loadLeads, 300);
+    }
+
+    let boardEventsInitialized = false;
+
+    function renderKanban() {
+      const board = document.getElementById("kanban-board");
+      board.innerHTML = "";
+
+      if (!boardEventsInitialized) {
+        boardEventsInitialized = true;
+        board.addEventListener("click", (e) => {
+          const btn = e.target.closest("button");
+          if (!btn) return;
+          e.stopPropagation();
+          if (btn.classList.contains("action-call")) {
+            openCallResultModal(btn.dataset.id, btn.dataset.name, btn.dataset.phone);
+          } else if (btn.classList.contains("action-stage")) {
+            moveLeadStage(btn.dataset.id);
+          } else if (btn.classList.contains("action-delete")) {
+            deleteLead(btn.dataset.id, btn.dataset.name);
+          }
+        });
+      }
+
+      STAGES.forEach(stage => {
+        const stageLeads = currentLeads.filter(l => {
+          if (stage.id === "descartado") {
+            return l.estado === "descartado" || l.estado === "no_contactar";
+          }
+          if (stage.id === "ganado") {
+            return l.estado === "ganado" || l.estado === "en_negociacion";
+          }
+          if (stage.id === "cola_llamada") {
+            return l.estado === "cola_llamada" || l.estado === "muestra_generada";
+          }
+          return l.estado === stage.id;
+        });
+
+        const col = document.createElement("div");
+        col.className = "kanban-col";
+        col.innerHTML = `
+          <div class="col-header">
+            <div class="col-title" style="color: ${stage.color};">${escapeHtml(stage.label)}</div>
+            <div class="col-count">${stageLeads.length}</div>
+          </div>
+          <div class="col-body" id="col-${stage.id}"></div>
+        `;
+
+        const body = col.querySelector(`#col-${stage.id}`);
+        stageLeads.forEach(lead => {
+          const card = document.createElement("div");
+          card.className = "lead-card";
+
+          const calTag = lead.calificacion
+            ? `<span class="tag ${escapeHtml(lead.calificacion)}">${escapeHtml(lead.calificacion)}</span>`
+            : "";
+          const webTag = lead.tiene_web_previa
+            ? `<span class="tag web">Con web</span>`
+            : `<span class="tag noweb">Sin web</span>`;
+
+          const variantTag = lead.script_variant
+            ? `<span class="tag ${lead.script_variant === 'formal' ? 'formal' : 'cercano'}">${lead.script_variant === 'formal' ? '🔵 Formal' : '🟡 Cercano'}</span>`
+            : "";
+
+          let analysisTag = "";
+          if (lead.analisis_llamada) {
+            const a = lead.analisis_llamada;
+            const sent = a.sentiment || "neutral";
+            const sentClass = sent === "positive" ? "sent-positivo" : (sent === "frustrated" ? "sent-frustrado" : (sent === "hesitant" ? "sent-dudoso" : "sent-neutral"));
+            const sentEmoji = sent === "positive" ? "😊 Positivo" : (sent === "frustrated" ? "😤 Frustrado" : (sent === "hesitant" ? "🤔 Dudoso" : "😐 Neutral"));
+            const scoreText = a.qualityScore ? `⭐ ${a.qualityScore}/10` : "";
+            const tip = escapeHtml(`${a.summaryNote || ''}${a.frictionPoint ? ' | Fricción: ' + a.frictionPoint : ''}`);
+            analysisTag = `<span class="tag ${sentClass}" title="${tip}">${sentEmoji} ${scoreText}</span>`;
+          }
+
+          const safeUrl = sanitizeUrl(lead.url_propuesta);
+          const safeName = escapeHtml(lead.empresa_nombre);
+          const safePhone = escapeHtml(lead.telefono);
+          const safeCity = escapeHtml(lead.ciudad || "Madrid");
+          const safeTrade = escapeHtml(lead.oficio_mapeado || lead.categoria_maps || "Servicios");
+          const safeId = escapeHtml(lead.id);
+
+          card.innerHTML = `
+            <div class="card-top">
+              <div class="lead-name">${safeName}</div>
+              <div class="lead-badges">${calTag}${webTag}${variantTag}${analysisTag}</div>
+            </div>
+            <div class="lead-info">
+              <span>📞 <strong>${safePhone}</strong></span>
+              <span>📍 ${safeCity} • ${safeTrade}</span>
+              <span>🔄 Llamadas: ${Number(lead.veces_llamado) || 0} | WhatsApp: ${Number(lead.veces_whatsapp) || 0}</span>
+            </div>
+            <div class="card-actions">
+              <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="btn btn-outline btn-sm" title="Ver muestra interactiva">👁️ Muestra</a>
+              <button class="btn btn-outline btn-sm action-call" data-id="${safeId}" data-name="${safeName}" data-phone="${safePhone}">📞 Llamar</button>
+              <button class="btn btn-outline btn-sm action-stage" data-id="${safeId}">➡️ Estado</button>
+              <button class="btn btn-outline btn-sm action-delete" data-id="${safeId}" data-name="${safeName}" style="color: #f87171; border-color: rgba(239, 68, 68, 0.3);" title="Eliminar lead">🗑️</button>
+            </div>
+          `;
+          body.appendChild(card);
+        });
+
+        board.appendChild(col);
+      });
+    }
+
+    // Acciones de modals
+    function closeModals() {
+      document.querySelectorAll(".modal-backdrop").forEach(m => m.style.display = "none");
+    }
+
+    function openImportModal() {
+      document.getElementById("modal-import").style.display = "flex";
+    }
+
+    async function submitImport() {
+      const campaniaId = document.getElementById("import-campania-select").value;
+      const rawData = document.getElementById("import-data").value.trim();
+      if (!rawData) return alert("Pega datos para importar");
+
+      let isJson = false;
+      let bodyData = rawData;
+      let headers = {};
+
+      try {
+        JSON.parse(rawData);
+        isJson = true;
+        headers["Content-Type"] = "application/json";
+      } catch (e) {
+        headers["Content-Type"] = "text/plain";
+      }
+
+      try {
+        const res = await fetch(`/api/crm/leads/importar?campania_id=${encodeURIComponent(campaniaId)}`, {
+          method: "POST",
+          headers,
+          body: bodyData,
+        });
+        const result = await res.json();
+        alert(`Resultado de la importación:\n` +
+          `• Nuevos importados: ${result.importados_nuevos}\n` +
+          `• Duplicados omitidos: ${result.duplicados_omitidos}\n` +
+          `• Bloqueados por Robinson: ${result.robinson_bloqueados}\n` +
+          `• Teléfonos inválidos: ${result.telefonos_invalidos}`);
+        closeModals();
+        loadAll();
+      } catch (e) {
+        alert("Error importando: " + e.message);
+      }
+    }
+
+    async function openLinesModal() {
+      const container = document.getElementById("lines-list-container");
+      container.innerHTML = "Cargando...";
+      document.getElementById("modal-lines").style.display = "flex";
+
+      const lines = await fetchJson("/api/crm/lineas");
+      container.innerHTML = "";
+      lines.forEach(line => {
+        const pct = Math.min(100, Math.round((line.llamadas_hoy / line.limite_diario) * 100));
+        const safeNombre = escapeHtml(line.nombre);
+        const safeNumero = escapeHtml(line.numero);
+        container.innerHTML += `
+          <div class="line-card">
+            <div class="line-meta">
+              <span>${safeNombre} (${safeNumero})</span>
+              <span>${Number(line.llamadas_hoy) || 0} / ${Number(line.limite_diario) || 30} hoy</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" style="width: ${pct}%;"></div>
+            </div>
+            <div style="font-size: 0.725rem; color: #64748b; margin-top: 4px;">
+              Estado: ${line.activa ? '🟢 Activa' : '🔴 Inactiva'} • Última llamada: ${line.ultima_llamada_at ? new Date(line.ultima_llamada_at).toLocaleTimeString() : 'Ninguna'}
+            </div>
+          </div>
+        `;
+      });
+    }
+
+    async function openRobinsonModal() {
+      const container = document.getElementById("robinson-list-container");
+      container.innerHTML = "Cargando...";
+      document.getElementById("modal-robinson").style.display = "flex";
+
+      const list = await fetchJson("/api/crm/robinson");
+      renderRobinsonList(list);
+    }
+
+    function renderRobinsonList(list) {
+      const container = document.getElementById("robinson-list-container");
+      if (!list || list.length === 0) {
+        container.innerHTML = "<p style='color: #64748b; font-size: 0.8rem;'>No hay números en la lista Robinson.</p>";
+        return;
+      }
+      container.innerHTML = "";
+      list.forEach(item => {
+        const row = document.createElement("div");
+        row.style.cssText = "display: flex; justify-content: space-between; align-items: center; background: #0c1424; padding: 6px 10px; border-radius: 6px; margin-bottom: 4px; font-size: 0.8rem;";
+
+        const infoDiv = document.createElement("div");
+        const strong = document.createElement("strong");
+        strong.textContent = item.telefono;
+        const motivoSpan = document.createElement("span");
+        motivoSpan.style.cssText = "color: #94a3b8; font-size: 0.725rem; margin-left: 8px;";
+        motivoSpan.textContent = item.motivo || "";
+        infoDiv.appendChild(strong);
+        infoDiv.appendChild(motivoSpan);
+
+        const delBtn = document.createElement("button");
+        delBtn.className = "btn btn-danger btn-sm";
+        delBtn.textContent = "Borrar";
+        delBtn.onclick = () => removeRobinson(encodeURIComponent(item.telefono));
+
+        row.appendChild(infoDiv);
+        row.appendChild(delBtn);
+        container.appendChild(row);
+      });
+    }
+
+    async function addRobinsonEntry() {
+      const tel = document.getElementById("new-robinson-phone").value.trim();
+      const motivo = document.getElementById("new-robinson-motivo").value.trim();
+      if (!tel) return alert("Indica un teléfono");
+
+      const res = await fetchJson("/api/crm/robinson", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ telefono: tel, motivo }),
+      });
+
+      if (res.success) {
+        document.getElementById("new-robinson-phone").value = "";
+        document.getElementById("new-robinson-motivo").value = "";
+        openRobinsonModal();
+        loadAll();
+      } else {
+        alert(res.error || "Error al añadir a Robinson");
+      }
+    }
+
+    async function removeRobinson(encodedTel) {
+      const res = await fetchJson(`/api/crm/robinson/${encodedTel}`, { method: "DELETE" });
+      if (res.success) {
+        openRobinsonModal();
+        loadAll();
+      }
+    }
+
+    function openCallResultModal(leadId, name, phone) {
+      document.getElementById("call-result-lead-id").value = leadId;
+      document.getElementById("call-result-lead-name").value = `${name} (${phone})`;
+      document.getElementById("call-result-confirmed-phone").value = phone;
+      document.getElementById("modal-call-result").style.display = "flex";
+    }
+
+    async function submitCallResult() {
+      const leadId = document.getElementById("call-result-lead-id").value;
+      const resVal = document.getElementById("call-result-select").value;
+      const confirmedPhone = document.getElementById("call-result-confirmed-phone").value.trim();
+      const addRobinson = document.getElementById("call-result-add-robinson").checked;
+
+      const payload = {
+        lead_id: leadId,
+        resultado: resVal,
+        whatsappAuthorized: resVal === "autorizo_whatsapp",
+        telefono_confirmado: confirmedPhone,
+        agregar_a_robinson: addRobinson,
+        motivo_robinson: addRobinson ? "Solicitó no volver a llamar durante la llamada" : undefined,
+      };
+
+      try {
+        await fetchJson("/api/crm/cola/llamada/resultado", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        closeModals();
+        loadAll();
+      } catch (e) {
+        alert("Error registrando resultado: " + e.message);
+      }
+    }
+
+    async function moveLeadStage(leadId) {
+      const nuevo = prompt("Nuevo estado (nuevo, cola_llamada, cola_whatsapp, whatsapp_enviado, interesado, ganado, descartado):");
+      if (!nuevo) return;
+      await fetchJson(`/api/crm/leads/${leadId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ estado: nuevo }),
+      });
+      loadAll();
+    }
+
+    async function deleteLead(leadId, name) {
+      if (!confirm(`¿Eliminar definitivamente el lead "${name}"?`)) return;
+      await fetchJson(`/api/crm/leads/${leadId}`, { method: "DELETE" });
+      loadAll();
+    }
+
+    async function triggerNextCall() {
+      try {
+        const res = await fetchJson("/api/crm/cola/llamada/siguiente?override_horario=true");
+        if (res.success) {
+          openCallResultModal(res.lead.id, res.lead.empresa_nombre, res.lead.telefono);
+          loadAll();
+        } else {
+          alert(res.message || "No hay leads disponibles o cuota agotada");
+        }
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    }
+
+    async function triggerNextWhatsApp() {
+      try {
+        const res = await fetchJson("/api/crm/cola/whatsapp/siguiente");
+        if (res.success) {
+          const ok = confirm(`Siguiente lead en cola de WhatsApp:\n\nPara: ${res.lead.empresa_nombre} (${res.lead.telefono})\nMensaje:\n"${res.mensaje}"\n\n¿Marcar como enviado con éxito?`);
+          await fetchJson("/api/crm/cola/whatsapp/resultado", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              lead_id: res.lead.id,
+              success: ok,
+              mensaje_enviado: res.mensaje,
+            }),
+          });
+          loadAll();
+        } else {
+          alert(res.message || "No hay leads en cola de WhatsApp");
+        }
+      } catch (e) {
+        alert("Error: " + e.message);
+      }
+    }
+
+    // Control de Workers y Orquestador
+    let orchestratorActive = false;
+    let callWorkerActive = false;
+    let waWorkerActive = false;
+
+    async function pollWorkersStatus() {
+      try {
+        const status = await fetchJson("/api/crm/orchestrator/status");
+        orchestratorActive = status.active;
+        callWorkerActive = status.callWorker.running;
+        waWorkerActive = status.whatsAppWorker.running;
+
+        const btnOrch = document.getElementById("btn-orchestrator");
+        if (orchestratorActive) {
+          btnOrch.className = "btn btn-danger btn-sm";
+          btnOrch.textContent = "🛑 Detener Prospección";
+        } else {
+          btnOrch.className = "btn btn-success btn-sm";
+          btnOrch.textContent = "🚀 Iniciar Prospección Automática";
+        }
+
+        const elCall = document.getElementById("status-worker-call");
+        elCall.textContent = callWorkerActive ? "🟢 ACTIVO" : "⚪ Pausado";
+        elCall.style.color = callWorkerActive ? "#10b981" : "#94a3b8";
+
+        const elWa = document.getElementById("status-worker-wa");
+        elWa.textContent = waWorkerActive ? "🟢 ACTIVO" : "⚪ Pausado";
+        elWa.style.color = waWorkerActive ? "#10b981" : "#94a3b8";
+      } catch (e) {
+        console.warn("Error consultando estado de workers:", e);
+      }
+    }
+
+    async function toggleOrchestrator() {
+      const endpoint = orchestratorActive ? "/api/crm/orchestrator/stop" : "/api/crm/orchestrator/start";
+      const campaniaId = document.getElementById("filter-campania").value || undefined;
+      await fetchJson(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ campaignId: campaniaId }),
+      });
+      await pollWorkersStatus();
+      loadAll();
+    }
+
+    async function toggleCallWorker() {
+      const endpoint = callWorkerActive ? "/api/crm/worker/calls/stop" : "/api/crm/worker/calls/start";
+      await fetchJson(endpoint, { method: "POST" });
+      await pollWorkersStatus();
+      loadAll();
+    }
+
+    async function toggleWhatsAppWorker() {
+      const endpoint = waWorkerActive ? "/api/crm/worker/whatsapp/stop" : "/api/crm/worker/whatsapp/start";
+      await fetchJson(endpoint, { method: "POST" });
+      await pollWorkersStatus();
+      loadAll();
+    }
+
+    let currentProyectoCrm = null;
+
+    async function openWaWorkerModal() {
+      document.getElementById("modal-wa-worker").style.display = "flex";
+      try {
+        const [waStatus, proyectos] = await Promise.all([
+          fetchJson("/api/crm/worker/whatsapp/status"),
+          fetchJson("/api/crm/proyectos"),
+        ]);
+        const cfg = waStatus.config || {};
+        document.getElementById("wa-modal-provider").value = cfg.provider || "mock";
+        document.getElementById("wa-modal-webhook").value = cfg.webhookUrl || "http://localhost:3002/api/whatsapp/send";
+        document.getElementById("wa-modal-max-daily").value = cfg.maxDailyMessages ?? 50;
+        document.getElementById("wa-modal-delay").value = cfg.sendDelayMs ?? 2000;
+        document.getElementById("wa-modal-jitter").value = cfg.jitterDelayMs ?? 1000;
+        document.getElementById("wa-modal-log").textContent =
+          `Estado: ${waStatus.running ? "🟢 En ejecución" : "⚪ Detenido"} | Enviados hoy: ${waStatus.messagesSentToday || 0} | Último evento: ${waStatus.lastLog || "-"}`;
+
+        if (Array.isArray(proyectos) && proyectos.length > 0) {
+          currentProyectoCrm = proyectos[0];
+          document.getElementById("wa-modal-template").value =
+            (currentProyectoCrm.plantillas_whatsapp && currentProyectoCrm.plantillas_whatsapp.default) || "";
+        }
+      } catch (e) {
+        console.error("Error cargando modal WhatsApp:", e);
+      }
+    }
+
+    async function saveWaWorkerModal() {
+      try {
+        const payload = {
+          provider: document.getElementById("wa-modal-provider").value,
+          webhookUrl: document.getElementById("wa-modal-webhook").value.trim(),
+          maxDailyMessages: parseInt(document.getElementById("wa-modal-max-daily").value || "50", 10),
+          sendDelayMs: parseInt(document.getElementById("wa-modal-delay").value || "2000", 10),
+          jitterDelayMs: parseInt(document.getElementById("wa-modal-jitter").value || "1000", 10),
+        };
+        await fetchJson("/api/crm/worker/whatsapp/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const tpl = document.getElementById("wa-modal-template").value.trim();
+        if (currentProyectoCrm && tpl) {
+          currentProyectoCrm.plantillas_whatsapp = {
+            ...(currentProyectoCrm.plantillas_whatsapp || {}),
+            default: tpl,
+          };
+          await fetchJson("/api/crm/proyectos", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(currentProyectoCrm),
+          });
+        }
+        closeModals();
+        await pollWorkersStatus();
+        alert("✅ Configuración del Worker de WhatsApp guardada.");
+      } catch (e) {
+        alert("Error guardando: " + e.message);
+      }
+    }
+
+    // Iniciar carga
+    loadAll();
+    pollWorkersStatus();
+    setInterval(loadStats, 10000);
+    setInterval(pollWorkersStatus, 4000);
+  </script>
+</body>
+</html>

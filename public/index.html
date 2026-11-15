@@ -1,0 +1,3555 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <script src="/control-auth.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Panel de Control - Kira Voice Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #131b2e;
+      --card-border: #1f2b45;
+      --card-hover: #1a253d;
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --accent-purple: #8b5cf6;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      background-image: 
+        radial-gradient(circle at 10% 10%, rgba(6, 182, 212, 0.07) 0%, transparent 40%),
+        radial-gradient(circle at 90% 90%, rgba(139, 92, 246, 0.07) 0%, transparent 40%);
+    }
+
+    header {
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(19, 27, 46, 0.85);
+      backdrop-filter: blur(12px);
+      position: sticky;
+      top: 0;
+      z-index: 50;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+    }
+
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.35);
+    }
+
+    .brand-title {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.45rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      transition: all 0.3s;
+    }
+
+    .status-badge.online {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.35);
+      color: #34d399;
+    }
+
+    .status-badge.error {
+      background: rgba(244, 63, 94, 0.12);
+      border-color: rgba(244, 63, 94, 0.35);
+      color: #fb7185;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      box-shadow: 0 0 10px currentColor;
+    }
+
+    /* Pestañas de Navegación */
+    .tabs-nav {
+      display: flex;
+      background: rgba(19, 27, 46, 0.9);
+      border-bottom: 1px solid var(--card-border);
+      padding: 0 2rem;
+      gap: 0.5rem;
+    }
+
+    .tab-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-family: inherit;
+      font-size: 0.9rem;
+      font-weight: 600;
+      padding: 0.9rem 1.25rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      border-bottom: 3px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      color: var(--accent-cyan);
+      border-bottom-color: var(--accent-cyan);
+    }
+
+    .tab-badge {
+      background: rgba(6, 182, 212, 0.2);
+      color: var(--accent-cyan);
+      font-size: 0.7rem;
+      padding: 0.1rem 0.45rem;
+      border-radius: 9999px;
+      font-weight: 700;
+    }
+
+    /* Contenedor Principal */
+    main {
+      flex: 1;
+      max-width: 1400px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 1.75rem 2rem;
+    }
+
+    .tab-content {
+      display: none;
+      animation: fadeIn 0.25s ease-out;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Grid Layout para Tab 1 (Llamada en Vivo) */
+    .live-call-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.75rem;
+    }
+
+    @media (max-width: 1024px) {
+      .live-call-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .panel {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--card-border);
+      margin-bottom: 1.25rem;
+    }
+
+    .panel-title {
+      font-size: 1.1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    /* Formulario de Llamada */
+    .call-meta-inputs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+      width: 100%;
+    }
+
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+      text-align: left;
+    }
+
+    .form-label {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .form-input, .form-textarea, .form-select {
+      background: rgba(11, 15, 25, 0.6);
+      border: 1px solid var(--card-border);
+      border-radius: 10px;
+      padding: 0.65rem 0.85rem;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.85rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .form-input:focus, .form-textarea:focus, .form-select:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    .form-textarea {
+      resize: vertical;
+      min-height: 90px;
+      line-height: 1.45;
+    }
+
+    /* Botón Circular de Llamada */
+    .call-btn-container {
+      position: relative;
+      margin: 1.25rem 0;
+      display: flex;
+      justify-content: center;
+    }
+
+    .call-btn {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      font-size: 2.2rem;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      z-index: 2;
+    }
+
+    .call-btn.idle {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      box-shadow: 0 0 35px rgba(16, 185, 129, 0.45);
+    }
+
+    .call-btn.idle:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 50px rgba(16, 185, 129, 0.65);
+    }
+
+    .call-btn.active {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+      box-shadow: 0 0 35px rgba(239, 68, 68, 0.45);
+    }
+
+    .call-btn.active:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 50px rgba(239, 68, 68, 0.65);
+    }
+
+    .call-btn-text {
+      font-size: 0.75rem;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+    }
+
+    .call-state-pill {
+      margin-top: 0.5rem;
+      padding: 0.5rem 1.25rem;
+      border-radius: 9999px;
+      font-size: 0.85rem;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      transition: all 0.2s ease;
+    }
+
+    .call-state-pill.listening {
+      background: rgba(6, 182, 212, 0.15);
+      border-color: rgba(6, 182, 212, 0.4);
+      color: #38bdf8;
+    }
+
+    .call-state-pill.processing {
+      background: rgba(245, 158, 11, 0.15);
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fbbf24;
+    }
+
+    .call-state-pill.speaking {
+      background: rgba(139, 92, 246, 0.15);
+      border-color: rgba(139, 92, 246, 0.4);
+      color: #c084fc;
+    }
+
+    canvas#visualizer {
+      width: 100%;
+      height: 70px;
+      margin-top: 1rem;
+      border-radius: 12px;
+      background: rgba(0, 0, 0, 0.25);
+    }
+
+    /* Tarjeta WhatsApp */
+    .whatsapp-card {
+      margin-top: 1.25rem;
+      width: 100%;
+      padding: 0.9rem 1.15rem;
+      border-radius: 14px;
+      background: rgba(16, 185, 129, 0.06);
+      border: 1px dashed rgba(16, 185, 129, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.3s ease;
+    }
+
+    .whatsapp-card.authorized {
+      background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(6, 182, 212, 0.25));
+      border: 1px solid #10b981;
+      box-shadow: 0 0 25px rgba(16, 185, 129, 0.35);
+    }
+
+    .whatsapp-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-align: left;
+    }
+
+    .whatsapp-icon { font-size: 1.6rem; }
+    .whatsapp-title { font-size: 0.85rem; font-weight: 700; }
+    .whatsapp-desc { font-size: 0.75rem; color: var(--text-muted); }
+
+    .auth-badge {
+      font-size: 0.75rem;
+      font-weight: 800;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.1);
+      color: var(--text-muted);
+    }
+
+    .whatsapp-card.authorized .auth-badge {
+      background: #10b981;
+      color: #042f2e;
+    }
+
+    /* Tarjetas de Métricas */
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+      margin-top: 1.25rem;
+      width: 100%;
+    }
+
+    .metric-card {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 0.75rem 0.5rem;
+      text-align: center;
+    }
+
+    .metric-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+    }
+
+    .metric-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 0.2rem;
+      font-weight: 600;
+    }
+
+    /* Diálogo / Chat */
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+      padding-right: 0.5rem;
+      max-height: 480px;
+    }
+
+    .message {
+      display: flex;
+      flex-direction: column;
+      max-width: 85%;
+      animation: fadeIn 0.25s ease-out;
+    }
+
+    .message.user { align-self: flex-end; }
+    .message.assistant { align-self: flex-start; }
+
+    .message-header {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      margin-bottom: 0.3rem;
+      font-weight: 600;
+    }
+
+    .message.user .message-header { justify-content: flex-end; }
+
+    .message-bubble {
+      padding: 0.85rem 1.15rem;
+      border-radius: 16px;
+      font-size: 0.88rem;
+      line-height: 1.45;
+    }
+
+    .message.user .message-bubble {
+      background: linear-gradient(135deg, #0284c7, #0369a1);
+      color: white;
+      border-bottom-right-radius: 4px;
+    }
+
+    .message.assistant .message-bubble {
+      background: #1a2338;
+      border: 1px solid var(--card-border);
+      color: #f1f5f9;
+      border-bottom-left-radius: 4px;
+    }
+
+    .interrupted-badge {
+      display: inline-block;
+      font-size: 0.7rem;
+      background: rgba(244, 63, 94, 0.2);
+      color: #fb7185;
+      border: 1px solid rgba(244, 63, 94, 0.4);
+      padding: 0.15rem 0.45rem;
+      border-radius: 6px;
+      margin-top: 0.35rem;
+      font-weight: 700;
+    }
+
+    /* Chips de frases */
+    .quick-prompts {
+      margin-top: 1rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--card-border);
+    }
+
+    .quick-title {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+      text-transform: uppercase;
+    }
+
+    .prompt-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+    }
+
+    .chip {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--card-border);
+      padding: 0.35rem 0.7rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .chip:hover {
+      background: rgba(6, 182, 212, 0.15);
+      border-color: var(--accent-cyan);
+      color: var(--accent-cyan);
+    }
+
+    /* Botones de Acción */
+    .btn {
+      padding: 0.7rem 1.25rem;
+      border-radius: 10px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      font-weight: 700;
+      cursor: pointer;
+      border: none;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-cyan), #0284c7);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.4);
+      transform: translateY(-1px);
+    }
+
+    .btn-emerald {
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+    }
+
+    .btn-emerald:hover {
+      box-shadow: 0 0 20px rgba(16, 185, 129, 0.4);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+      color: white;
+    }
+
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--card-border);
+      color: var(--text);
+    }
+
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    /* Tablas de Historial y Leads */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      background: rgba(11, 15, 25, 0.5);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+      font-size: 0.85rem;
+    }
+
+    th {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 0.85rem 1rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--card-border);
+      text-transform: uppercase;
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+    }
+
+    td {
+      padding: 0.9rem 1rem;
+      border-bottom: 1px solid rgba(31, 43, 69, 0.6);
+      vertical-align: middle;
+    }
+
+    tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      font-size: 0.72rem;
+      font-weight: 700;
+    }
+
+    .badge-authorized { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .badge-interested { background: rgba(6, 182, 212, 0.2); color: #38bdf8; }
+    .badge-rejected { background: rgba(244, 63, 94, 0.2); color: #fb7185; }
+    .badge-wrong { background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
+    .badge-call-later { background: rgba(139, 92, 246, 0.2); color: #c084fc; }
+    .badge-no-answer { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+
+    /* 5-Stage Commercial Stepper */
+    .stages-stepper {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 0.65rem;
+      margin-bottom: 1.25rem;
+      width: 100%;
+    }
+
+    .stage-step {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 0.75rem 0.6rem;
+      text-align: center;
+      position: relative;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+    }
+
+    .stage-step.active {
+      background: linear-gradient(135deg, rgba(6, 182, 212, 0.18), rgba(139, 92, 246, 0.18));
+      border-color: var(--accent-cyan);
+      box-shadow: 0 0 20px rgba(6, 182, 212, 0.25);
+      transform: translateY(-2px);
+    }
+
+    .stage-step.completed {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.45);
+    }
+
+    .stage-step-num {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .stage-step.active .stage-step-num {
+      background: var(--accent-cyan);
+      color: #042f2e;
+      box-shadow: 0 0 10px var(--accent-cyan);
+    }
+
+    .stage-step.completed .stage-step-num {
+      background: var(--accent-emerald);
+      color: #042f2e;
+    }
+
+    .stage-step-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+    }
+
+    .stage-step.active .stage-step-title {
+      color: #38bdf8;
+    }
+
+    .stage-step.completed .stage-step-title {
+      color: #34d399;
+    }
+
+    .stage-step-desc {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+      line-height: 1.25;
+    }
+
+    /* Live State Badges Grid */
+    .state-monitor-box {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 0.85rem;
+      margin-top: 1rem;
+      width: 100%;
+      text-align: left;
+    }
+
+    .state-monitor-title {
+      font-size: 0.75rem;
+      font-weight: 800;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.65rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .state-monitor-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.55rem;
+    }
+
+    .state-item {
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 8px;
+      padding: 0.45rem 0.65rem;
+      font-size: 0.73rem;
+    }
+
+    .state-item-label {
+      color: var(--text-muted);
+      font-size: 0.67rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .state-item-val {
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .stage-cfg-card {
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    /* Consola de logs */
+    .terminal-box {
+      background: #060911;
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.78rem;
+      color: #38bdf8;
+      max-height: 250px;
+      overflow-y: auto;
+      line-height: 1.5;
+    }
+
+    footer {
+      padding: 1.25rem 2rem;
+      text-align: center;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      border-top: 1px solid var(--card-border);
+      background: rgba(19, 27, 46, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="brand-icon">🎙️</div>
+      <div>
+        <div class="brand-title">Kira Voice AI</div>
+        <div class="brand-subtitle">Together AI • Qwen 3.5-9B • Kokoro ef_dora • Silero VAD v5</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="status-badge" id="systemStatus">
+        <div class="status-dot"></div>
+        <span id="systemStatusText">Comprobando IA...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Pestañas de Navegación -->
+  <div class="tabs-nav">
+    <button class="tab-btn active" onclick="switchTab('tab-live')">
+      <span>🎙️</span><span>Llamada en Vivo</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('tab-centralita')">
+      <span>📞</span><span>Control de Centralita</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('tab-config')">
+      <span>⚙️</span><span>Guión y Configuración</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('tab-history')">
+      <span>📋</span><span>Historial y Leads</span>
+      <span class="tab-badge" id="leadsCountBadge">0</span>
+    </button>
+    <a href="/crm" class="tab-btn" style="text-decoration: none; color: inherit; background: rgba(59, 130, 246, 0.15); border-color: rgba(59, 130, 246, 0.3);">
+      <span>⚡</span><span>CRM Nexus Leads (Outbound)</span>
+    </a>
+  </div>
+
+  <main>
+    <!-- TAB 1: LLAMADA EN VIVO / SIMULADOR -->
+    <div class="tab-content active" id="tab-live">
+      <!-- 5-Stage Commercial Call Stepper -->
+      <div class="stages-stepper" id="stagesStepper">
+        <div class="stage-step active" id="step-1">
+          <div class="stage-step-num">1</div>
+          <div class="stage-step-title">Presentación</div>
+          <div class="stage-step-desc">Identificar negocio</div>
+        </div>
+        <div class="stage-step" id="step-2">
+          <div class="stage-step-num">2</div>
+          <div class="stage-step-title">Propuesta</div>
+          <div class="stage-step-desc">Muestra gratuita</div>
+        </div>
+        <div class="stage-step" id="step-3">
+          <div class="stage-step-num">3</div>
+          <div class="stage-step-title">Aclaraciones</div>
+          <div class="stage-step-desc">Dudas y precios</div>
+        </div>
+        <div class="stage-step" id="step-4">
+          <div class="stage-step-num">4</div>
+          <div class="stage-step-title">Autorización</div>
+          <div class="stage-step-desc">WhatsApp + Teléfono</div>
+        </div>
+        <div class="stage-step" id="step-5">
+          <div class="stage-step-num">5</div>
+          <div class="stage-step-title">Despedida</div>
+          <div class="stage-step-desc">Cierre cordial</div>
+        </div>
+      </div>
+
+      <div class="live-call-grid">
+        <!-- Columna Izquierda: Control de Llamada -->
+        <div class="panel" style="text-align: center; align-items: center;">
+          <h2 style="font-size: 1.25rem; font-weight: 800; margin-bottom: 0.25rem;">Simulador Web en Vivo</h2>
+          <p style="font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.75rem;">
+            Prueba la llamada con tu micrófono. Puedes interrumpir a Kira en cualquier momento.
+          </p>
+          <div style="background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.35); border-radius: 8px; padding: 0.55rem 0.75rem; font-size: 0.75rem; color: #fbbf24; margin-bottom: 0.85rem; width: 100%; text-align: left; line-height: 1.4;">
+            ⚠️ <strong>Evitar Acoples y Ruidos Fuertes:</strong> Tus altavoces no deben estar al 90-100% (bájalos al 40-50% o usa auriculares). Si escuchas ruido en tus altavoces, haz clic en el botón <strong>«Silenciar Micrófono»</strong> para comprobar si el micro se está acoplando.
+          </div>
+
+          <div class="call-meta-inputs">
+            <div class="form-group">
+              <label class="form-label">Nombre Empresa / Cliente</label>
+              <input type="text" id="liveCompany" class="form-input" placeholder="Ej: Taller Hermanos López" value="Taller de Prueba">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Teléfono Móvil</label>
+              <input type="text" id="livePhone" class="form-input" placeholder="+34 600 000 000" value="+34 612 345 678">
+            </div>
+          </div>
+
+          <div class="call-btn-container">
+            <button class="call-btn idle" id="callToggleBtn">
+              <span id="callBtnIcon">📞</span>
+              <span class="call-btn-text" id="callBtnText">Llamar</span>
+            </button>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; justify-content: center; margin-top: 0.75rem; margin-bottom: 0.75rem; flex-wrap: wrap;">
+            <button type="button" class="btn btn-secondary" id="btnToggleMicMute" style="font-size: 0.78rem; padding: 0.45rem 0.85rem;">
+              <span id="micMuteIcon">🎤</span> <span id="micMuteLabel">Micrófono: Activo</span>
+            </button>
+            <button type="button" class="btn btn-secondary" id="btnTestVoiceSpeaker" style="font-size: 0.78rem; padding: 0.45rem 0.85rem;">
+              <span>🔊 Probar audio de Kira</span>
+            </button>
+          </div>
+
+          <div class="call-state-pill" id="callStatePill">
+            <span>💤</span>
+            <span id="callStateText">En espera de llamada</span>
+          </div>
+
+          <canvas id="visualizer"></canvas>
+
+          <!-- Tarjeta de Autorización para WhatsApp -->
+          <div class="whatsapp-card" id="whatsappCard">
+            <div class="whatsapp-info">
+              <div class="whatsapp-icon">💬</div>
+              <div>
+                <div class="whatsapp-title">Autorización WhatsApp (Muestra Web)</div>
+                <div class="whatsapp-desc">Requiere aceptación explícita (preguntar precio no autoriza)</div>
+              </div>
+            </div>
+            <div class="auth-badge" id="whatsappBadge">PENDIENTE</div>
+          </div>
+
+          <!-- Monitor de Estado y Condiciones en Tiempo Real -->
+          <div class="state-monitor-box" id="stateMonitorBox">
+            <div class="state-monitor-title">
+              <span>🧠 Control de Estados de la Llamada</span>
+              <span id="liveCurrentStageBadge" style="color: var(--accent-cyan); font-weight: 800;">Etapa 1: Presentación</span>
+            </div>
+            <div class="state-monitor-grid">
+              <div class="state-item">
+                <div class="state-item-label">Negocio Confirmado</div>
+                <div class="state-item-val" id="monBusinessConfirmed">⏳ Pendiente</div>
+              </div>
+              <div class="state-item">
+                <div class="state-item-label">Pregunta Pendiente</div>
+                <div class="state-item-val" id="monPendingQuestion" style="color: #fbbf24;">CONFIRMAR_NEGOCIO</div>
+              </div>
+              <div class="state-item">
+                <div class="state-item-label">Autorización WhatsApp</div>
+                <div class="state-item-val" id="monWhatsappAuth">⏳ Pendiente</div>
+              </div>
+              <div class="state-item">
+                <div class="state-item-label">Teléfono Confirmado</div>
+                <div class="state-item-val" id="monPhoneConfirmed">⏳ Pendiente</div>
+              </div>
+              <div class="state-item" style="grid-column: span 2;">
+                <div class="state-item-label">Dudas / Objeciones Resueltas</div>
+                <div class="state-item-val" id="monDoubtsResolved" style="color: var(--text-muted);">Ninguna</div>
+              </div>
+              <div class="state-item" style="grid-column: span 2; display: flex; justify-content: space-between; align-items: center;">
+                <span class="state-item-label" style="margin: 0;">Resultado del Programa:</span>
+                <span class="state-item-val" id="monOutcomeStatus" style="color: #38bdf8;">EN_CURSO</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Métricas y Telemetría en Tiempo Real -->
+          <div class="metrics-grid" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0.75rem;">
+            <div class="metric-card" style="border-color: rgba(6, 182, 212, 0.3);">
+              <div class="metric-value" id="metricEngineBadge" style="font-size: 0.85rem; color: var(--accent-cyan);">Together</div>
+              <div class="metric-label">Motor Activo</div>
+            </div>
+            <div class="metric-card" style="border-color: rgba(16, 185, 129, 0.3);">
+              <div class="metric-value" id="metricRoleBadge" style="font-size: 0.85rem; color: #34d399;">💼 Comercial</div>
+              <div class="metric-label">Asistente en Voz</div>
+            </div>
+            <div class="metric-card" style="border-color: rgba(139, 92, 246, 0.3);">
+              <div class="metric-value" id="metricHandoffBadge" style="font-size: 0.85rem; color: #c084fc;">En espera</div>
+              <div class="metric-label">Traspaso Técnico</div>
+            </div>
+            <div class="metric-card" style="border-color: rgba(245, 158, 11, 0.3);">
+              <div class="metric-value" id="metricCostBadge" style="font-size: 0.85rem; color: #fbbf24;">$0.0000</div>
+              <div class="metric-label">Consumo IA</div>
+            </div>
+          </div>
+
+          <div class="metrics-grid">
+            <div class="metric-card">
+              <div class="metric-value" id="metricTtft">-- ms</div>
+              <div class="metric-label">TTFT (1er Token)</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value" id="metricTtfa">-- ms</div>
+              <div class="metric-label">TTFA (1ª Voz)</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value" id="metricStt">-- ms</div>
+              <div class="metric-label">Whisper STT</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-value" id="metricTurns">0</div>
+              <div class="metric-label">Turno Activo</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna Derecha: Diálogo -->
+        <div class="panel" style="height: 100%;">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📜</span>
+              <span>Transcripción de la Conversación</span>
+            </div>
+            <button id="clearChatBtn" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 0.8rem;">
+              Limpiar chat
+            </button>
+          </div>
+
+          <div class="chat-messages" id="chatMessages">
+            <div class="message assistant">
+              <div class="message-header">
+                <span>KIRA (ASISTENTE)</span>
+                <span>• Ahora</span>
+              </div>
+              <div class="message-bubble">
+                Pulsa el botón verde <strong>Llamar</strong> para hablar con Kira usando tu micrófono.
+              </div>
+            </div>
+          </div>
+
+          <div class="quick-prompts">
+            <div class="quick-title">Frases de prueba para decirle a Kira:</div>
+            <div class="prompt-chips">
+              <div class="chip">"¿De qué se trata la llamada?"</div>
+              <div class="chip">"¿Cuánto cuesta el servicio?"</div>
+              <div class="chip">"Vale, pero ¿cuánto cuesta?"</div>
+              <div class="chip">"Vale, envíamela por WhatsApp"</div>
+              <div class="chip">"Ahora mismo no tengo tiempo"</div>
+              <div class="chip">"Ya tenemos una página web"</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: CENTRALITA SIP NETELIP Y MARCACIÓN -->
+    <div class="tab-content" id="tab-centralita">
+      <div class="live-call-grid">
+        <!-- Panel de Estado de la Centralita Netelip -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>🌐</span>
+              <span>Centralita Telefónica Netelip SIP (sip.netelip.com)</span>
+            </div>
+            <span class="badge" id="bridgeStatusBadge">COMPROBANDO</span>
+          </div>
+
+          <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.25); border-radius: 8px; padding: 0.85rem; margin-bottom: 1.25rem; font-size: 0.82rem;">
+            <div style="font-weight: 700; color: #34d399; margin-bottom: 0.25rem;">📞 Estado de la Línea Forja Web:</div>
+            <ul style="margin: 0; padding-left: 1.2rem; color: var(--text-muted); line-height: 1.45;">
+              <li><strong>Número de Cabecera (Caller ID):</strong> +34 951 20 46 98</li>
+              <li><strong>Cuenta SIP:</strong>  @ sip.netelip.com:5060</li>
+              <li><strong>Llamadas Entrantes (Devolución de perdida):</strong> Activas con respuesta automática <em>"Buenos días, dígame..."</em></li>
+              <li><strong>Transferencia a Responsable:</strong> Configurada a +34 648 64 84 41 con alerta inmediata por WhatsApp</li>
+            </ul>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; flex-wrap: wrap; margin-bottom: 1.25rem;">
+            <button class="btn btn-emerald" id="btnStartBridgeNetelip" style="flex: 1;">
+              <span>▶ Iniciar Centralita Netelip (Directa)</span>
+            </button>
+            <button class="btn btn-danger" id="btnStopBridge">
+              <span>⏹ Detener Centralita</span>
+            </button>
+          </div>
+
+          <div class="form-label" style="margin-bottom: 0.5rem;">Registro de Actividad en Directo:</div>
+          <div class="terminal-box" id="bridgeLogBox">Cargando registros...</div>
+        </div>
+
+        <!-- Marcador Telefónico Real -->
+        <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span>📲</span>
+              <span>Marcador de Llamadas Salientes</span>
+            </div>
+          </div>
+
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.25rem;">
+            Lanza una llamada saliente mediante la línea de <strong>Netelip</strong>. El bot conversará con el cliente mediante OpenAI Realtime y transferirá al móvil si lo piden.
+          </p>
+
+          <div class="form-group" style="margin-bottom: 1rem;">
+            <label class="form-label">Nombre del Negocio / Empresa</label>
+            <input type="text" id="dialCompany" class="form-input" placeholder="Ej: Peluquería Estilo" value="Prueba Forja Web">
+          </div>
+
+          <div class="form-group" style="margin-bottom: 1.25rem;">
+            <label class="form-label">Número de Teléfono a Marcar (España 9 dígitos)</label>
+            <input type="tel" id="dialPhone" class="form-input" placeholder="Ej: " value="">
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; margin-bottom: 0.75rem;">
+            <button class="btn btn-primary" id="btnDialNetelip" style="padding: 0.9rem; font-weight: 700;">
+              <span>📞 Marcar con Netelip</span>
+            </button>
+            <button class="btn btn-danger" id="btnHangupNetelip" style="padding: 0.9rem;">
+              <span>📴 Colgar Llamada</span>
+            </button>
+          </div>
+
+          <button class="btn btn-secondary" id="btnTransferTestNetelip" style="width: 100%; padding: 0.65rem; font-size: 0.82rem; border-color: rgba(139, 92, 246, 0.4); color: #c084fc;">
+            <span>🔀 Probar Transferencia SIP REFER al </span>
+          </button>
+
+          <div id="dialResultMsg" style="margin-top: 1rem; font-size: 0.85rem; text-align: center;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: GUIÓN Y CONFIGURACIÓN PERSISTENTE -->
+    <div class="tab-content" id="tab-config">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>⚙️</span>
+            <span>Configuración Persistente del Agente Comercial</span>
+          </div>
+          <button class="btn btn-secondary" id="btnTestApiConnection">
+            <span>🧪 Comprobar Conexión con Together AI</span>
+          </button>
+        </div>
+
+        <div id="testConnectionResult" style="margin-bottom: 1.25rem; display: none;"></div>
+
+        <form id="configForm">
+          <!-- Selector de Motor de Conversación -->
+          <div style="background: rgba(6, 182, 212, 0.08); border: 1px solid rgba(6, 182, 212, 0.3); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <h3 style="font-size: 1.05rem; font-weight: 800; color: #38bdf8; display: flex; align-items: center; gap: 0.5rem;">
+                  <span>🚀</span> <span>Modo y Motor de Conversación</span>
+                </h3>
+                <p style="font-size: 0.78rem; color: var(--text-muted);">
+                  Selecciona entre la cadena existente de Together AI (STT Whisper + Qwen3.5 + Kokoro) o el nuevo modo directo de OpenAI Realtime con doble asistente.
+                </p>
+              </div>
+              <select id="cfgConversationEngine" class="form-select" style="max-width: 380px; font-weight: 700; border-color: var(--accent-cyan);">
+                <option value="openai_realtime">OpenAI Realtime (Voz a Voz + Doble Asistente)</option>
+                <option value="gemini_live">Google Gemini Live (BidiGenerateContent)</option>
+                <option value="together_pipeline">Together AI Pipeline (STT -> LLM -> TTS)</option>
+              </select>
+            </div>
+
+            <!-- Controles específicos de Google Gemini Live -->
+            <div id="geminiLiveSettings" style="display: none; border-top: 1px dashed rgba(6, 182, 212, 0.25); padding-top: 1rem; margin-top: 0.75rem;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label class="form-label" style="margin: 0;">Google Gemini API Key</label>
+                    <span id="geminiKeyBadge" class="badge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8; font-size: 0.7rem;">Comprobando...</span>
+                  </div>
+                  <input type="password" id="cfgGeminiApiKey" class="form-input" placeholder="AIzaSy... (dejar en blanco para conservar)">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Modelo Gemini Live</label>
+                  <select id="cfgGeminiCommercialModel" class="form-select">
+                    <option value="gemini-2.5-flash-native-audio-preview-12-2025" selected>gemini-2.5-flash-native-audio-preview-12-2025 (Recomendado)</option>
+                    <option value="gemini-2.0-flash-live-001">gemini-2.0-flash-live-001 (Baja Latencia)</option>
+                  </select>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                  <label class="form-label">Voz Asistente Gemini</label>
+                  <select id="cfgGeminiCommercialVoice" class="form-select">
+                    <option value="Aoede" selected>Aoede (⭐ Femenina natural y comercial)</option>
+                    <option value="Puck">Puck (Masculina enérgica y dinámica)</option>
+                    <option value="Charon">Charon (Masculina sobria y formal)</option>
+                    <option value="Kore">Kore (Femenina pausada y cálida)</option>
+                    <option value="Fenrir">Fenrir (Masculina grave)</option>
+                    <option value="Leda">Leda (Femenina clara)</option>
+                    <option value="Orus">Orus (Masculina formal)</option>
+                    <option value="Zephyr">Zephyr (Femenina profesional)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Formato de Audio Telefónico</label>
+                  <div style="font-size: 0.8rem; color: #38bdf8; background: rgba(56, 189, 248, 0.1); padding: 0.6rem; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2);">
+                    🔊 Filtro FIR sinc 21 taps + Diezmado 3:1 (24k &rarr; 8k) + PCMA Netelip
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Controles específicos de OpenAI Realtime -->
+            <div id="openaiRealtimeSettings" style="display: none; border-top: 1px dashed rgba(6, 182, 212, 0.25); padding-top: 1rem; margin-top: 0.75rem;">
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <div class="form-group">
+                  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                    <label class="form-label" style="margin: 0;">OpenAI API Key</label>
+                    <span id="openAiKeyBadge" class="badge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8; font-size: 0.7rem;">Comprobando...</span>
+                  </div>
+                  <input type="password" id="cfgOpenAiApiKey" class="form-input" placeholder="sk-... (dejar en blanco para conservar)">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Detección de Turnos (VAD)</label>
+                  <select id="cfgRealtimeTurnDetection" class="form-select">
+                    <option value="semantic_vad">Semantic VAD (Recomendado OpenAI)</option>
+                    <option value="server_vad">Server VAD Estándar</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Panel Doble Asistente: Comercial vs Técnico -->
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+                <!-- Asistente Comercial (Rol 1) -->
+                <div style="background: rgba(19, 27, 46, 0.75); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px; padding: 1rem;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                    <strong style="color: #34d399; font-size: 0.88rem; display: flex; align-items: center; gap: 0.35rem;">
+                      <span>💼</span> <span>Asistente Comercial (Laura / Juan)</span>
+                    </strong>
+                    <button type="button" id="btnPreviewCommercialVoice" class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.25rem 0.6rem;">
+                      <span>▶ Probar Voz</span>
+                    </button>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0.65rem;">
+                    <label class="form-label" style="font-size: 0.72rem;">Modelo Realtime</label>
+                    <select id="cfgRealtimeCommercialModel" class="form-select" style="font-size: 0.8rem;">
+                      <option value="gpt-realtime-2.1-mini" selected>gpt-realtime-2.1-mini (Económico / Rápido)</option>
+                      <option value="gpt-realtime-2.1">gpt-realtime-2.1 (Capacidad Superior)</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" style="font-size: 0.72rem;">Voz Inicial (adapta nombre automáticamente)</label>
+                    <select id="cfgRealtimeCommercialVoice" class="form-select" style="font-size: 0.8rem;">
+                      <option value="marin" selected>marin (⭐ Femenina natural - Laura)</option>
+                      <option value="coral">coral (Femenina cálida y cercana - Laura)</option>
+                      <option value="sage">sage (Femenina serena y clara - Laura)</option>
+                      <option value="shimmer">shimmer (Femenina expresiva - Laura)</option>
+                      <option value="ballad">ballad (Femenina melódica - Laura)</option>
+                      <option value="verse">verse (⭐ Masculina dinámica - Juan)</option>
+                      <option value="cedar">cedar (Masculina firme y profesional - Juan)</option>
+                      <option value="ash">ash (Masculina grave y segura - Juan)</option>
+                      <option value="echo">echo (Masculina suave - Juan)</option>
+                      <option value="alloy">alloy (Neutra / Masculina - Juan)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- Asistente Técnico (Rol 2) -->
+                <div style="background: rgba(19, 27, 46, 0.75); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 10px; padding: 1rem;">
+                  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+                    <strong style="color: #c084fc; font-size: 0.88rem; display: flex; align-items: center; gap: 0.35rem;">
+                      <span>👨‍🔧</span> <span>Asistente Técnico (Marcos / Elena)</span>
+                    </strong>
+                    <button type="button" id="btnPreviewTechnicalVoice" class="btn btn-secondary" style="font-size: 0.7rem; padding: 0.25rem 0.6rem;">
+                      <span>▶ Probar Voz</span>
+                    </button>
+                  </div>
+                  <div class="form-group" style="margin-bottom: 0.65rem;">
+                    <label class="form-label" style="font-size: 0.72rem;">Modelo Técnico</label>
+                    <select id="cfgRealtimeTechnicalModel" class="form-select" style="font-size: 0.8rem;">
+                      <option value="gpt-realtime-2.1" selected>gpt-realtime-2.1 (Máxima Precisión Técnica)</option>
+                      <option value="gpt-realtime-2.1-mini">gpt-realtime-2.1-mini</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" style="font-size: 0.72rem;">Voz Técnica (adapta nombre automáticamente)</label>
+                    <select id="cfgRealtimeTechnicalVoice" class="form-select" style="font-size: 0.8rem;">
+                      <option value="cedar" selected>cedar (⭐ Masculina técnica - Marcos)</option>
+                      <option value="ash">ash (Masculina grave / experta - Marcos)</option>
+                      <option value="verse">verse (Masculina dinámica - Marcos)</option>
+                      <option value="echo">echo (Masculina clara - Marcos)</option>
+                      <option value="alloy">alloy (Neutra / Masculina - Marcos)</option>
+                      <option value="marin">marin (Femenina profesional - Elena)</option>
+                      <option value="sage">sage (Femenina técnica y serena - Elena)</option>
+                      <option value="coral">coral (Femenina cálida - Elena)</option>
+                      <option value="shimmer">shimmer (Femenina expresiva - Elena)</option>
+                      <option value="ballad">ballad (Femenina pausada - Elena)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Umbrales de Coste y Traspaso -->
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.75rem;">
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Alerta Coste ($ USD)</label>
+                  <input type="number" step="0.01" id="cfgCallCostAlertUsd" class="form-input" style="font-size: 0.78rem;" value="0.10">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Límite Suave ($ USD)</label>
+                  <input type="number" step="0.01" id="cfgCallCostSoftLimitUsd" class="form-input" style="font-size: 0.78rem;" value="0.20">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Límite Duro ($ USD)</label>
+                  <input type="number" step="0.01" id="cfgCallCostHardLimitUsd" class="form-input" style="font-size: 0.78rem;" value="0.30">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Timeout Traspaso (ms)</label>
+                  <input type="number" id="cfgHandoffTimeoutMs" class="form-input" style="font-size: 0.78rem;" value="8000">
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Configuración de Telefonía SIP Netelip y Transferencia a Humano -->
+          <div style="background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.5rem;">
+              <div>
+                <h3 style="font-size: 1.05rem; font-weight: 800; color: #34d399; display: flex; align-items: center; gap: 0.5rem;">
+                  <span>📞</span> <span>Centralita Telefónica SIP (Netelip) & Transferencia a Humano</span>
+                </h3>
+                <p style="font-size: 0.78rem; color: var(--text-muted);">
+                  Configura tu línea de Netelip y el número móvil donde recibirás las llamadas transferidas cuando un cliente pida hablar con un responsable.
+                </p>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+              <div class="form-group">
+                <label class="form-label">Proveedor Telefónico</label>
+                <select id="cfgSipProvider" class="form-select">
+                  <option value="netelip" selected>Netelip (sip.netelip.com)</option>
+                  <option value="twilio">Twilio Elastic SIP Trunk</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Servidor SIP Netelip</label>
+                <input type="text" id="cfgSipServer" class="form-input" placeholder="sip.netelip.com" value="sip.netelip.com">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1rem;">
+              <div class="form-group">
+                <label class="form-label">Usuario / Extensión Netelip</label>
+                <input type="text" id="cfgSipUser" class="form-input" placeholder="Ej: 1001 o usuario troncal">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Contraseña SIP</label>
+                <input type="password" id="cfgSipPassword" class="form-input" placeholder="Contraseña de la línea SIP">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Número Cabecera / Caller ID</label>
+                <input type="text" id="cfgSipCallerId" class="form-input" placeholder="Ej: 34912345678 o móvil Forja Web">
+              </div>
+            </div>
+
+            <!-- Transferencia a Humano en Caliente -->
+            <div style="background: rgba(19, 27, 46, 0.85); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 10px; padding: 1rem;">
+              <strong style="color: #60a5fa; font-size: 0.88rem; display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.75rem;">
+                <span>👤</span> <span>Desvío y Transferencia en Directo al Responsable</span>
+              </strong>
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Móvil del Responsable (Transferencia)</label>
+                  <input type="text" id="cfgHumanTransferPhone" class="form-input" placeholder="" value="">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Nombre del Responsable</label>
+                  <input type="text" id="cfgHumanTransferName" class="form-input" placeholder="Miguel" value="Miguel">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Alerta Inmediata por WhatsApp</label>
+                  <select id="cfgNotifyTransferViaWhatsApp" class="form-select">
+                    <option value="true" selected>Sí (Envía ficha del lead por WhatsApp al sonar)</option>
+                    <option value="false">No (Solo llamada)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 1.5rem;">
+              <!-- Selector de Variante de Guión Comercial (A/B Testing) -->
+              <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: 10px; padding: 1rem; margin-bottom: 1.25rem;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+                  <div>
+                    <strong style="color: #60a5fa; font-size: 0.88rem; display: flex; align-items: center; gap: 0.4rem;">
+                      <span>⚖️</span> <span>Variante de Guión Comercial (A/B Testing)</span>
+                    </strong>
+                    <span style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-top: 2px;">Elige el estilo de diálogo o activa el test A/B para alternar 50% / 50% entre llamadas.</span>
+                  </div>
+                  <select id="cfgScriptVariant" class="form-select" style="max-width: 320px; font-weight: 700; border-color: #3b82f6;">
+                    <option value="cercano" selected>🟡 Guion Cercano (Tú, Google Maps, Local)</option>
+                    <option value="formal">🔵 Guion Formal (Usted, Consultoría Digital)</option>
+                    <option value="ab_test">⚖️ Modo A/B Test (Alternancia automática 50/50)</option>
+                  </select>
+                </div>
+                <div id="scriptVariantDesc" style="font-size: 0.75rem; color: #cbd5e1; line-height: 1.4; background: rgba(0,0,0,0.25); padding: 0.5rem 0.75rem; border-radius: 6px;">
+                  🟡 <strong>Guion Cercano:</strong> Trato cercano de tú a tú, menciona ficha de Google Maps sin web y ofrece muestra previa rápida en 1 minuto por WhatsApp (99€ + 10€/mes).
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 1.25rem;">
+                <label class="form-label">Guión del Agente (System Prompt Base)</label>
+                <textarea id="cfgSystemPrompt" class="form-textarea" style="min-height: 180px;"></textarea>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 1.25rem;">
+                <div class="form-group">
+                  <label class="form-label">Precio Instalación (€)</label>
+                  <input type="text" id="cfgInstallPrice" class="form-input" value="99">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Plan Básico (€/mes)</label>
+                  <input type="text" id="cfgMonthlyBasic" class="form-input" value="5">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Plan Completo (€/mes)</label>
+                  <input type="text" id="cfgMonthlyFull" class="form-input" value="10">
+                </div>
+              </div>
+            </div>
+
+            <div id="togetherTtsSettingsBox">
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.35rem;">
+                  <label class="form-label" style="margin: 0;">Voz de Síntesis (Kokoro TTS)</label>
+                  <button type="button" id="btnPreviewSelectedVoice" class="btn btn-secondary" style="padding: 0.25rem 0.65rem; font-size: 0.72rem;">
+                    <span>▶ Probar Voz Seleccionada</span>
+                  </button>
+                </div>
+                <select id="cfgTtsVoice" class="form-select">
+                  <optgroup label="🇪🇸 Voces en Español (Kokoro AI - Web Oficial)">
+                    <option value="carlos">Carlos (Masculina - Claro y seguro)</option>
+                    <option value="carmen">Carmen (Femenina - Expresiva y profesional)</option>
+                    <option value="diego">Diego (Masculina - Tono cálido y cercano)</option>
+                    <option value="isabel">Isabel (Femenina - Dulce y pausada)</option>
+                    <option value="isabella">Isabella (Femenina - Refinada y clara)</option>
+                    <option value="javier">Javier (Masculina - Varonil y formal)</option>
+                    <option value="jose">José (Masculina - Convincente y sobrio)</option>
+                    <option value="lucia">Lucía (Femenina - Juvenil y dinámica)</option>
+                    <option value="maria">María (Femenina - Cálida y empática)</option>
+                    <option value="mateo">Mateo (Masculina - Ejecutivo y natural)</option>
+                    <option value="miguel">Miguel (Masculina - Enérgico y comercial)</option>
+                    <option value="santiago">Santiago (Masculina - Ágil y directo)</option>
+                    <option value="sofia">Sofía (Femenina - Amigable y cordial)</option>
+                  </optgroup>
+                  <optgroup label="🇪🇸 Voces Nativas Kokoro (Técnicas España)">
+                    <option value="ef_dora">ef_dora (Femenina España - ⭐ Más natural / Recomendada)</option>
+                    <option value="em_alex">em_alex (Masculina España - Profesional / Directa)</option>
+                    <option value="em_santa">em_santa">em_santa (Masculina España - Grave / Confiable)</option>
+                  </optgroup>
+                  <optgroup label="👩 Voces Femeninas Multilingües Kokoro">
+                    <option value="af_bella">af_bella (Dulce y pausada)</option>
+                    <option value="af_sarah">af_sarah (Juvenil y alegre)</option>
+                    <option value="af_nicole">af_nicole (Formal y elegante)</option>
+                    <option value="af_sky">af_sky (Fresca y conversacional)</option>
+                    <option value="af_alloy">af_alloy (Neutra y corporativa)</option>
+                    <option value="af_jessica">af_jessica (Cercana y empática)</option>
+                    <option value="af_river">af_river (Tranquila y suave)</option>
+                    <option value="af_heart">af_heart (Cálida y armónica)</option>
+                    <option value="bf_emma">bf_emma (Acento europeo suave)</option>
+                    <option value="bf_isabella">bf_isabella (Europea refinada)</option>
+                    <option value="bf_alice">bf_alice (Británica pulcra)</option>
+                    <option value="if_sara">if_sara (Italiana / Romance - Sonido natural)</option>
+                    <option value="pf_dora">pf_dora (Portuguesa / Romance)</option>
+                  </optgroup>
+                  <optgroup label="👨 Voces Masculinas Multilingües Kokoro">
+                    <option value="am_adam">am_adam (Enérgica y dinámica)</option>
+                    <option value="am_michael">am_michael (Ejecutiva y seria)</option>
+                    <option value="am_echo">am_echo (Tono medio muy natural)</option>
+                    <option value="am_eric">am_eric (Amigable y cercana)</option>
+                    <option value="am_liam">am_liam (Joven y moderna)</option>
+                    <option value="am_onyx">am_onyx (Grave y profunda)</option>
+                    <option value="am_puck">am_puck (Informal y ágil)</option>
+                    <option value="bm_george">bm_george (Europea ejecutiva)</option>
+                    <option value="bm_daniel">bm_daniel (Sobria y clara)</option>
+                    <option value="bm_lewis">bm_lewis (Serena y paciente)</option>
+                    <option value="im_nicola">im_nicola (Italiano / Romance)</option>
+                    <option value="pm_alex">pm_alex (Portugués / Romance)</option>
+                    <option value="pm_santa">pm_santa (Portugués grave)</option>
+                  </optgroup>
+                </select>
+
+                <!-- Frase de Preescucha Personalizable -->
+                <div style="margin-top: 0.5rem;">
+                  <label style="font-size: 0.72rem; color: var(--text-muted); display: block; margin-bottom: 0.2rem;">Frase para probar antes de guardar:</label>
+                  <input type="text" id="previewVoiceText" class="form-input" style="font-size: 0.78rem; padding: 0.4rem 0.6rem; width: 100%;" value="Hola, buenas. Te llamo para prepararte una muestra previa gratuita de tu página web.">
+                </div>
+              </div>
+
+              <!-- Control de Velocidad y Cadencia -->
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <label class="form-label">Velocidad / Cadencia de Voz</label>
+                  <span id="speedValLabel" style="font-size: 0.8rem; font-weight: 700; color: var(--accent-cyan);">1.00x</span>
+                </div>
+                <input type="range" id="cfgTtsSpeed" min="0.80" max="1.25" step="0.05" value="1.00" style="width: 100%; accent-color: var(--accent-cyan); cursor: pointer;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.68rem; color: var(--text-muted); margin-top: 0.2rem;">
+                  <span>0.80x (Calma)</span>
+                  <span>1.00x (Natural)</span>
+                  <span>1.25x (Rápida)</span>
+                </div>
+                <div style="display: flex; gap: 0.35rem; margin-top: 0.45rem;">
+                  <button type="button" class="chip" onclick="setSpeedPreset(0.90)" style="font-size: 0.68rem; padding: 0.2rem 0.5rem;">0.90x Pausada</button>
+                  <button type="button" class="chip" onclick="setSpeedPreset(1.00)" style="font-size: 0.68rem; padding: 0.2rem 0.5rem;">1.00x Natural</button>
+                  <button type="button" class="chip" onclick="setSpeedPreset(1.10)" style="font-size: 0.68rem; padding: 0.2rem 0.5rem;">1.10x Dinámica</button>
+                </div>
+              </div>
+
+              <!-- Controles de Naturalidad y Cadencia Humana -->
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="form-label">Modo Expresivo / Cadencia Humana</label>
+                <select id="cfgNaturalPauses" class="form-select">
+                  <option value="true" selected>Activado (Inserta micro-pausas y modula conectores)</option>
+                  <option value="false">Desactivado (Directo)</option>
+                </select>
+                <div style="font-size: 0.72rem; color: #94a3b8; background: rgba(6,182,212,0.06); border: 1px solid rgba(6,182,212,0.2); border-radius: 8px; padding: 0.5rem 0.75rem; margin-top: 0.5rem; line-height: 1.4;">
+                  💡 <b>Secreto de Naturalidad:</b> Kokoro respira y modula la entonación con comas (',') y puntos. En tu Prompt, redacta oraciones cortas separadas por comas para que la voz fluya como una persona real.
+                </div>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="form-label">Modelo LLM</label>
+                <select id="cfgLlmModel" class="form-select">
+                  <option value="Qwen/Qwen3.5-9B">Qwen/Qwen3.5-9B (Ultra Rápido - 1000ms)</option>
+                  <option value="meta-llama/Llama-3.3-70B-Instruct-Turbo">Llama-3.3-70B-Turbo (Alta Capacidad)</option>
+                </select>
+              </div>
+
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="form-label">Límite de Tokens (Respuestas cortas)</label>
+                <input type="number" id="cfgMaxTokens" class="form-input" value="90">
+              </div>
+
+              <div class="form-group" style="margin-bottom: 1rem;">
+                <label class="form-label">Modo Sin Razonamiento (Baja Latencia)</label>
+                <select id="cfgDisableReasoning" class="form-select">
+                  <option value="true">Activado (Sin CoT, máxima velocidad)</option>
+                  <option value="false">Desactivado (Con pensamiento interno)</option>
+                </select>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- Configuración de las 5 Etapas del Guión Comercial -->
+          <div style="margin-top: 2rem; border-top: 1px solid var(--card-border); padding-top: 1.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.25rem;">
+              <div>
+                <h3 style="font-size: 1.1rem; font-weight: 800; color: #f8fafc; margin-bottom: 0.25rem;">
+                  🎯 5 Etapas de la Llamada Comercial y Condiciones de Avance
+                </h3>
+                <p style="font-size: 0.8rem; color: var(--text-muted);">
+                  Configura el objetivo, frase guía y condición de transición para cada fase de la llamada.
+                </p>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+              <!-- Etapa 1 -->
+              <div class="stage-cfg-card">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.65rem;">
+                  <span class="stage-step-num" style="background: var(--accent-cyan); color: #042f2e;">1</span>
+                  <strong style="font-size: 0.88rem; color: #38bdf8;">Etapa 1: Presentación</strong>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.72rem;">Objetivo</label>
+                  <input type="text" id="cfgStage1Goal" class="form-input" style="font-size: 0.78rem;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.72rem;">Frase Guía Orientativa</label>
+                  <input type="text" id="cfgStage1Phrase" class="form-input" style="font-size: 0.78rem;">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Condición para Avanzar</label>
+                  <input type="text" id="cfgStage1Cond" class="form-input" style="font-size: 0.78rem;">
+                </div>
+              </div>
+
+              <!-- Etapa 2 -->
+              <div class="stage-cfg-card">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.65rem;">
+                  <span class="stage-step-num" style="background: var(--accent-cyan); color: #042f2e;">2</span>
+                  <strong style="font-size: 0.88rem; color: #38bdf8;">Etapa 2: Propuesta</strong>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.72rem;">Objetivo</label>
+                  <input type="text" id="cfgStage2Goal" class="form-input" style="font-size: 0.78rem;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.72rem;">Frase Guía Orientativa</label>
+                  <input type="text" id="cfgStage2Phrase" class="form-input" style="font-size: 0.78rem;">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Condición para Avanzar</label>
+                  <input type="text" id="cfgStage2Cond" class="form-input" style="font-size: 0.78rem;">
+                </div>
+              </div>
+
+              <!-- Etapa 3 -->
+              <div class="stage-cfg-card">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.65rem;">
+                  <span class="stage-step-num" style="background: var(--accent-cyan); color: #042f2e;">3</span>
+                  <strong style="font-size: 0.88rem; color: #38bdf8;">Etapa 3: Aclaraciones</strong>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.72rem;">Objetivo</label>
+                  <input type="text" id="cfgStage3Goal" class="form-input" style="font-size: 0.78rem;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.72rem;">Frase Guía Orientativa</label>
+                  <input type="text" id="cfgStage3Phrase" class="form-input" style="font-size: 0.78rem;">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Condición para Avanzar</label>
+                  <input type="text" id="cfgStage3Cond" class="form-input" style="font-size: 0.78rem;">
+                </div>
+              </div>
+
+              <!-- Etapa 4 -->
+              <div class="stage-cfg-card">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.65rem;">
+                  <span class="stage-step-num" style="background: var(--accent-cyan); color: #042f2e;">4</span>
+                  <strong style="font-size: 0.88rem; color: #38bdf8;">Etapa 4: Autorización y Contacto</strong>
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.72rem;">Objetivo</label>
+                  <input type="text" id="cfgStage4Goal" class="form-input" style="font-size: 0.78rem;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0.5rem;">
+                  <label class="form-label" style="font-size: 0.72rem;">Frase Guía Orientativa</label>
+                  <input type="text" id="cfgStage4Phrase" class="form-input" style="font-size: 0.78rem;">
+                </div>
+                <div class="form-group">
+                  <label class="form-label" style="font-size: 0.72rem;">Condición para Avanzar</label>
+                  <input type="text" id="cfgStage4Cond" class="form-input" style="font-size: 0.78rem;">
+                </div>
+              </div>
+
+              <!-- Etapa 5 -->
+              <div class="stage-cfg-card" style="grid-column: span 2;">
+                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.65rem;">
+                  <span class="stage-step-num" style="background: var(--accent-emerald); color: #042f2e;">5</span>
+                  <strong style="font-size: 0.88rem; color: #34d399;">Etapa 5: Despedida y Cierre</strong>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 0.75rem;">
+                  <div class="form-group">
+                    <label class="form-label" style="font-size: 0.72rem;">Objetivo</label>
+                    <input type="text" id="cfgStage5Goal" class="form-input" style="font-size: 0.78rem;">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" style="font-size: 0.72rem;">Frase Guía Orientativa</label>
+                    <input type="text" id="cfgStage5Phrase" class="form-input" style="font-size: 0.78rem;">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label" style="font-size: 0.72rem;">Condición para Avanzar</label>
+                    <input type="text" id="cfgStage5Cond" class="form-input" style="font-size: 0.78rem;">
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Respuestas a Objeciones y Salidas -->
+            <h3 style="font-size: 1.1rem; font-weight: 800; color: #f8fafc; margin-bottom: 0.25rem;">
+              🛡️ Respuestas a Dudas Frecuentes, Objeciones y Salidas Definidas
+            </h3>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 1rem;">
+              Se atienden desde cualquier etapa. Al resolver la duda, el bot retoma automáticamente la pregunta pendiente.
+            </p>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.5rem;">
+              <div class="form-group">
+                <label class="form-label">💰 Duda de Precio / Coste (Distinción Gratis vs Contratación)</label>
+                <textarea id="cfgObjPrice" class="form-textarea" style="min-height: 70px; font-size: 0.78rem;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">🌐 Objeción: «Ya tengo página web»</label>
+                <textarea id="cfgObjAlreadyHasWeb" class="form-textarea" style="min-height: 70px; font-size: 0.78rem;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">⏰ Objeción: «No tengo tiempo»</label>
+                <textarea id="cfgObjNoTime" class="form-textarea" style="min-height: 70px; font-size: 0.78rem;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">📞 Salida: «Llamar más tarde / Ocupado»</label>
+                <textarea id="cfgObjCallLater" class="form-textarea" style="min-height: 70px; font-size: 0.78rem;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">❓ Salida: «Persona equivocada / No es el negocio»</label>
+                <textarea id="cfgObjWrongPerson" class="form-textarea" style="min-height: 70px; font-size: 0.78rem;"></textarea>
+              </div>
+              <div class="form-group">
+                <label class="form-label">🛑 Salida: «Rechazo / No me interesa» (Sin insistir)</label>
+                <textarea id="cfgObjRefusal" class="form-textarea" style="min-height: 70px; font-size: 0.78rem;"></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Vincular Línea de WhatsApp con Código QR -->
+          <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem; flex-wrap: wrap; gap: 0.75rem;">
+              <div>
+                <h3 style="font-size: 1.05rem; font-weight: 800; color: #38bdf8; display: flex; align-items: center; gap: 0.5rem;">
+                  <span>📱</span> <span>Línea de WhatsApp Emisora (Vincular con tu Teléfono Móvil)</span>
+                </h3>
+                <p style="font-size: 0.78rem; color: var(--text-muted);">
+                  Vincula tu cuenta de WhatsApp escaneando el código QR para que los mensajes salgan directamente desde tu propio número.
+                </p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.5rem;">
+                <span id="waLineStatusBadge" class="badge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8; font-size: 0.78rem; padding: 0.35rem 0.75rem;">COMPROBANDO...</span>
+                <button type="button" id="btnConnectWaQr" class="btn btn-primary" style="font-size: 0.75rem; padding: 0.35rem 0.75rem;">
+                  <span>▶ Conectar / Generar QR</span>
+                </button>
+                <button type="button" id="btnLogoutWa" class="btn btn-danger" style="font-size: 0.75rem; padding: 0.35rem 0.75rem; display: none;">
+                  <span>🔴 Desconectar</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Contenedor del Código QR -->
+            <div id="waQrBox" style="display: none; background: #090d16; border: 1px dashed rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; text-align: center;">
+              <div style="font-size: 0.88rem; font-weight: 700; color: #38bdf8; margin-bottom: 0.5rem;">
+                📷 Escanea este código con WhatsApp en tu móvil
+              </div>
+              <p style="font-size: 0.78rem; color: var(--text-muted); margin-bottom: 0.85rem;">
+                Abre <strong>WhatsApp</strong> en tu teléfono &gt; toca <strong>Menú (⋮) o Ajustes</strong> &gt; <strong>Dispositivos vinculados</strong> &gt; <strong>Vincular un dispositivo</strong>.
+              </p>
+              <div id="waQrLoadingText" style="padding: 1.5rem; color: #38bdf8; font-weight: 600; font-size: 0.85rem;">
+                ⏳ Generando código QR seguro desde WhatsApp... un momento...
+              </div>
+              <div id="waQrImgWrapper" style="display: none; background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); width: fit-content; margin: 0 auto;">
+                <img id="waQrImg" src="" alt="Código QR WhatsApp" style="width: 220px; height: 220px; display: block;">
+              </div>
+              <div style="font-size: 0.72rem; color: #94a3b8; margin-top: 0.6rem;">
+                ⏳ El código QR se actualiza automáticamente cada 30-40 segundos hasta que lo escanees.
+              </div>
+            </div>
+
+            <!-- Panel de Línea Conectada -->
+            <div id="waConnectedBox" style="display: none; background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.35); border-radius: 10px; padding: 1rem; margin-bottom: 1rem;">
+              <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0.5rem;">
+                <div>
+                  <strong style="color: #34d399; font-size: 0.95rem; display: flex; align-items: center; gap: 0.4rem;">
+                    <span>✅</span> <span>Línea Activa y Lista para Enviar: <span id="waConnectedPhoneDisplay">+34...</span></span>
+                  </strong>
+                  <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 0.2rem;">
+                    Identificador de sesión: <span id="waConnectedNameDisplay">Mi Teléfono</span> • Sesión persistente guardada en disco.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Prueba Rápida de Envío -->
+            <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.75rem 1rem;">
+              <div style="font-size: 0.78rem; font-weight: 700; color: #e2e8f0; margin-bottom: 0.4rem;">
+                🧪 Probar Envío Directo de WhatsApp desde esta línea
+              </div>
+              <div style="display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap;">
+                <input type="text" id="waTestPhone" class="form-input" placeholder="Tu número móvil (ej: 612345678)" style="max-width: 260px; font-size: 0.8rem;">
+                <input type="text" id="waTestMessage" class="form-input" placeholder="Mensaje de prueba" value="Hola, prueba de conexión exitosa desde el bot de llamadas Forja Web." style="flex: 1; min-width: 250px; font-size: 0.8rem;">
+                <button type="button" id="btnSendWaTest" class="btn btn-emerald" style="font-size: 0.78rem; padding: 0.45rem 0.9rem;">
+                  <span>🚀 Enviar Prueba</span>
+                </button>
+              </div>
+              <div id="waTestResultMsg" style="font-size: 0.75rem; margin-top: 0.4rem; display: none;"></div>
+            </div>
+          </div>
+
+          <!-- Configuración del Worker de WhatsApp -->
+          <div style="background: rgba(16, 185, 129, 0.07); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 1.25rem; margin-top: 1.5rem;">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.75rem;">
+              <div>
+                <h3 style="font-size: 1.05rem; font-weight: 800; color: #34d399; display: flex; align-items: center; gap: 0.5rem;">
+                  <span>💬</span> <span>Configuración del Worker de WhatsApp (Envío Automático de Muestras)</span>
+                </h3>
+                <p style="font-size: 0.78rem; color: var(--text-muted);">
+                  Configura cómo se envían automáticamente las muestras web cuando un cliente autoriza el WhatsApp en la llamada.
+                </p>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.6rem;">
+                <span id="waWorkerStatusBadge" class="badge" style="background: rgba(148, 163, 184, 0.2); color: #94a3b8;">DETENIDO</span>
+                <button type="button" id="btnToggleWaWorkerConfig" class="btn btn-emerald" style="padding: 0.4rem 0.85rem; font-size: 0.78rem;">
+                  <span>▶ Iniciar Worker</span>
+                </button>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem; margin-bottom: 1rem;">
+              <div class="form-group">
+                <label class="form-label">Proveedor de Envío</label>
+                <select id="cfgWaProvider" class="form-select">
+                  <option value="baileys" selected>📱 Línea WhatsApp Nativa (Escaneo de QR con tu móvil - Recomendado)</option>
+                  <option value="mock">🧪 Simulación / Pruebas (Mock - Sin envío externo)</option>
+                  <option value="webhook">🌐 Pasarela Webhook HTTP (Evolution API / BuilderBot / n8n)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">URL del Webhook de WhatsApp (solo si seleccionas Webhook)</label>
+                <input type="text" id="cfgWaWebhookUrl" class="form-input" placeholder="http://localhost:3002/api/whatsapp/send" value="http://localhost:3002/api/whatsapp/send">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1rem;">
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.75rem;">Límite Diario Anti-Ban (mensajes/día)</label>
+                <input type="number" id="cfgWaMaxDaily" class="form-input" value="50" min="1" max="500">
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.75rem;">Pausa Base entre Envíos (ms)</label>
+                <input type="number" id="cfgWaSendDelay" class="form-input" value="2000" step="500">
+              </div>
+              <div class="form-group">
+                <label class="form-label" style="font-size: 0.75rem;">Variabilidad Humana / Jitter (ms)</label>
+                <input type="number" id="cfgWaJitterDelay" class="form-input" value="1000" step="250">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Plantilla del Mensaje de WhatsApp (Variables: <code>{{nombre}}</code>, <code>{{oficio}}</code>, <code>{{ciudad}}</code>, <code>{{enlace}}</code>)</label>
+              <textarea id="cfgWaTemplate" class="form-textarea" style="min-height: 75px; font-size: 0.82rem;" placeholder="¡Hola {{nombre}}! Como acordamos en la llamada, aquí tienes la muestra web interactiva de {{oficio}} que preparamos para ti: {{enlace}}"></textarea>
+            </div>
+
+            <div id="waWorkerLastLogBox" style="margin-top: 0.6rem; font-size: 0.75rem; color: #94a3b8; background: rgba(9, 13, 22, 0.6); padding: 0.5rem 0.75rem; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
+              Estado del Worker: Cargando...
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: flex-end; gap: 1rem; margin-top: 1rem; border-top: 1px solid var(--card-border); padding-top: 1.25rem;">
+            <button type="submit" class="btn btn-emerald" style="padding: 0.85rem 2rem;">
+              <span>💾 Guardar Cambios</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- TAB 4: HISTORIAL DE LLAMADAS Y LEADS -->
+    <div class="tab-content" id="tab-history">
+      <div class="panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <span>📋</span>
+            <span>Historial de Prospección y Leads Autorizados</span>
+          </div>
+          <button class="btn btn-secondary" onclick="loadHistoryTable()">
+            <span>🔄 Actualizar Lista</span>
+          </button>
+        </div>
+
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Fecha / Hora</th>
+                <th>Empresa</th>
+                <th>Teléfono</th>
+                <th>Canal</th>
+                <th>Duración</th>
+                <th>Etapa</th>
+                <th>Estado</th>
+                <th>WhatsApp Muestra</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="historyTableBody">
+              <tr>
+                <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 2rem;">Cargando historial de llamadas...</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    Netelip Voice Agent • Centralita SIP Headless (TCP 127.0.0.1:8080) • Panel de Control Local (127.0.0.1:3000)
+  </footer>
+
+  <script>
+    // Variables de Estado y Audio
+    let mySessionId = null;
+    let isCallActive = false;
+    let ws = null;
+    let audioCtx = null;
+    let micStream = null;
+    let micSource = null;
+    let micProcessor = null;
+    let activeSources = [];
+    let nextAudioTime = 0;
+    let currentTurnId = 0;
+    let turnEndReceivedForTurn = -1;
+    let drainedReportedForTurn = -1;
+
+    // Elementos DOM de Llamada
+    const callBtn = document.getElementById("callToggleBtn");
+    const callBtnText = document.getElementById("callBtnText");
+    const callBtnIcon = document.getElementById("callBtnIcon");
+    const callStatePill = document.getElementById("callStatePill");
+    const callStateText = document.getElementById("callStateText");
+    const chatMessages = document.getElementById("chatMessages");
+    const whatsappCard = document.getElementById("whatsappCard");
+    const whatsappBadge = document.getElementById("whatsappBadge");
+    const metricTtft = document.getElementById("metricTtft");
+    const metricTtfa = document.getElementById("metricTtfa");
+    const metricStt = document.getElementById("metricStt");
+    const metricTurns = document.getElementById("metricTurns");
+    const canvas = document.getElementById("visualizer");
+    const canvasCtx = canvas.getContext("2d");
+    const systemStatusBadge = document.getElementById("systemStatus");
+    const systemStatusText = document.getElementById("systemStatusText");
+
+    // Navegación por pestañas
+    function switchTab(tabId) {
+      document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".tab-content").forEach(c => c.classList.remove("active"));
+      
+      const targetBtn = Array.from(document.querySelectorAll(".tab-btn")).find(b => b.getAttribute("onclick").includes(tabId));
+      if (targetBtn) targetBtn.classList.add("active");
+      document.getElementById(tabId).classList.add("active");
+
+      if (tabId === "tab-centralita") refreshBridgeStatus();
+      if (tabId === "tab-history") loadHistoryTable();
+      if (tabId === "tab-config") loadConfigForm();
+    }
+
+    // Inicialización y Comprobación de Salud del Servidor
+    async function checkHealth() {
+      try {
+        const res = await fetch("/api/test-connection", { method: "POST" });
+        const data = await res.json();
+        if (data.ok) {
+          systemStatusBadge.className = "status-badge online";
+          systemStatusText.textContent = `IA Conectada (${data.llmLatencyMs} ms)`;
+        } else {
+          systemStatusBadge.className = "status-badge error";
+          systemStatusText.textContent = "Error en API Together";
+        }
+      } catch {
+        systemStatusBadge.className = "status-badge error";
+        systemStatusText.textContent = "Servidor Desconectado";
+      }
+    }
+    checkHealth();
+
+    // Visualizador de Audio
+    let visualizerData = new Uint8Array(64);
+    function resizeCanvas() {
+      if (canvas.parentElement) {
+        canvas.width = canvas.parentElement.clientWidth - 40;
+        canvas.height = 70;
+      }
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    function drawVisualizer() {
+      requestAnimationFrame(drawVisualizer);
+      canvasCtx.fillStyle = "rgba(19, 27, 46, 0.4)";
+      canvasCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const barWidth = (canvas.width / 40);
+      let x = 0;
+
+      for (let i = 0; i < 40; i++) {
+        let barHeight = 4;
+        if (isCallActive) {
+          const val = visualizerData[i % visualizerData.length] || 0;
+          barHeight = Math.max(4, (val / 255) * canvas.height * 0.9);
+        }
+
+        const gradient = canvasCtx.createLinearGradient(0, canvas.height, 0, 0);
+        gradient.addColorStop(0, "#06b6d4");
+        gradient.addColorStop(1, "#8b5cf6");
+
+        canvasCtx.fillStyle = gradient;
+        canvasCtx.fillRect(x, (canvas.height - barHeight) / 2, barWidth - 3, barHeight);
+        x += barWidth;
+      }
+    }
+    drawVisualizer();
+
+    function setState(state) {
+      callStatePill.className = "call-state-pill " + state;
+      if (state === "listening") {
+        callStatePill.innerHTML = "<span>👂</span><span>Escuchando tu voz...</span>";
+      } else if (state === "processing") {
+        callStatePill.innerHTML = "<span>⚡</span><span>Pensando respuesta...</span>";
+      } else if (state === "speaking") {
+        callStatePill.innerHTML = "<span>🎙️</span><span>Kira hablando (puedes interrumpir)</span>";
+      } else {
+        callStatePill.innerHTML = "<span>💤</span><span>En espera de llamada</span>";
+      }
+    }
+
+    function addMessage(role, text, interrupted = false) {
+      const msgDiv = document.createElement("div");
+      msgDiv.className = "message " + (role === "user" ? "user" : "assistant");
+
+      const header = document.createElement("div");
+      header.className = "message-header";
+      const now = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      header.innerHTML = `<span>${role === "user" ? "CLIENTE (TÚ)" : "KIRA (ASISTENTE)"}</span><span>• ${now}</span>`;
+
+      const bubble = document.createElement("div");
+      bubble.className = "message-bubble";
+      bubble.textContent = text;
+
+      if (interrupted) {
+        const badge = document.createElement("div");
+        badge.className = "interrupted-badge";
+        badge.textContent = "⚡ Interrumpido por el cliente";
+        bubble.appendChild(badge);
+      }
+
+      msgDiv.appendChild(header);
+      msgDiv.appendChild(bubble);
+      chatMessages.appendChild(msgDiv);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    document.getElementById("clearChatBtn").onclick = () => {
+      chatMessages.innerHTML = "";
+    };
+
+    // Chips de frases rápidas
+    document.querySelectorAll(".chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        if (!isCallActive) {
+          alert("Inicia la llamada primero para hablar con Kira.");
+        }
+      });
+    });
+
+    // Control de Llamada en Navegador
+    callBtn.addEventListener("click", () => {
+      if (!isCallActive) {
+        startCall();
+      } else {
+        endCall();
+      }
+    });
+
+    // Control de Silencio de Micrófono
+    let isMicMuted = false;
+    let incomingPcmResidual = null;
+    const btnToggleMicMute = document.getElementById("btnToggleMicMute");
+    const micMuteIcon = document.getElementById("micMuteIcon");
+    const micMuteLabel = document.getElementById("micMuteLabel");
+
+    function updateMicMuteUI() {
+      if (!btnToggleMicMute) return;
+      if (isMicMuted) {
+        btnToggleMicMute.style.background = "linear-gradient(135deg, #ef4444, #dc2626)";
+        btnToggleMicMute.style.color = "white";
+        btnToggleMicMute.style.borderColor = "#ef4444";
+        micMuteIcon.textContent = "🔇";
+        micMuteLabel.textContent = "Micro: SILENCIADO";
+      } else {
+        btnToggleMicMute.style.background = "rgba(255, 255, 255, 0.08)";
+        btnToggleMicMute.style.color = "var(--text)";
+        btnToggleMicMute.style.borderColor = "var(--card-border)";
+        micMuteIcon.textContent = "🎤";
+        micMuteLabel.textContent = "Micro: Activo";
+      }
+    }
+
+    if (btnToggleMicMute) {
+      btnToggleMicMute.addEventListener("click", () => {
+        isMicMuted = !isMicMuted;
+        updateMicMuteUI();
+        if (micStream) {
+          micStream.getAudioTracks().forEach(t => {
+            t.enabled = !isMicMuted;
+          });
+        }
+      });
+    }
+
+    // Botón de prueba directa de voz de Kira por altavoces
+    const btnTestVoiceSpeaker = document.getElementById("btnTestVoiceSpeaker");
+    if (btnTestVoiceSpeaker) {
+      btnTestVoiceSpeaker.addEventListener("click", () => {
+        const audio = new Audio("/api/test-audio.wav?t=" + Date.now());
+        btnTestVoiceSpeaker.innerHTML = "<span>⏳ Reproduciendo...</span>";
+        audio.onended = () => {
+          btnTestVoiceSpeaker.innerHTML = "<span>🔊 Probar audio de Kira</span>";
+        };
+        audio.onerror = (e) => {
+          alert("Error reproduciendo audio: " + e.message);
+          btnTestVoiceSpeaker.innerHTML = "<span>🔊 Probar audio de Kira</span>";
+        };
+        audio.play().catch(err => {
+          alert("El navegador bloqueó la reproducción: " + err.message);
+          btnTestVoiceSpeaker.innerHTML = "<span>🔊 Probar audio de Kira</span>";
+        });
+      });
+    }
+
+    async function startCall() {
+      try {
+        callBtnText.textContent = "Conectando...";
+
+        // 1. Reiniciar métricas, transcripción y autorización
+        metricTtft.textContent = "-- ms";
+        metricTtfa.textContent = "-- ms";
+        metricStt.textContent = "-- ms";
+        metricTurns.textContent = "0";
+        whatsappCard.className = "whatsapp-card";
+        whatsappBadge.textContent = "PENDIENTE";
+        chatMessages.innerHTML = "";
+        turnEndReceivedForTurn = -1;
+        drainedReportedForTurn = -1;
+
+        // 2. Inicializar AudioContext (con frecuencia nativa del hardware para evitar distorsión)
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === "suspended") {
+          await audioCtx.resume();
+        }
+        nextAudioTime = audioCtx.currentTime;
+
+        // 3. Obtener micrófono con cancelación de eco activa y supresión avanzada
+        micStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: 1,
+            echoCancellation: { ideal: true },
+            noiseSuppression: { ideal: true },
+            autoGainControl: { ideal: true },
+            googEchoCancellation: { ideal: true },
+            googAutoGainControl: { ideal: true },
+            googNoiseSuppression: { ideal: true },
+            googHighpassFilter: { ideal: true }
+          }
+        });
+
+        // 4. Conectar WebSocket
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const controlSession = await fetch("/api/control/session");
+        if (!controlSession.ok) throw new Error("Identificación requerida para iniciar la voz");
+        ws = new WebSocket(`${protocol}//${window.location.host}/ws-client`);
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => {
+          isCallActive = true;
+          callBtn.className = "call-btn active";
+          callBtnIcon.textContent = "📴";
+          callBtnText.textContent = "Colgar";
+          setState("speaking");
+
+          if (typeof updateStateMonitorUI === "function") {
+            updateStateMonitorUI({
+              currentStage: 1,
+              businessConfirmed: false,
+              interestShown: false,
+              doubtsResolved: [],
+              pendingQuestion: "OFFER_PROPOSAL",
+              whatsappAuthorized: false,
+              phoneConfirmed: false,
+              outcomeStatus: "EN_CURSO"
+            });
+          }
+          whatsappCard.className = "whatsapp-card";
+          whatsappBadge.textContent = "PENDIENTE";
+
+          setupMicProcessing();
+
+          const company = document.getElementById("liveCompany").value;
+          const phone = document.getElementById("livePhone").value;
+          ws.send(JSON.stringify({ type: "call_start", company, phone }));
+        };
+
+        ws.onmessage = async (event) => {
+          if (typeof event.data === "string") {
+            const data = JSON.parse(event.data);
+            handleServerEvent(data);
+          } else {
+            // Audio binario PCM Int16 a 16kHz desde el servidor
+            const rawBytes = event.data instanceof ArrayBuffer 
+              ? event.data 
+              : await event.data.arrayBuffer();
+            let uint8 = new Uint8Array(rawBytes);
+
+            if (incomingPcmResidual && incomingPcmResidual.length > 0) {
+              const merged = new Uint8Array(incomingPcmResidual.length + uint8.length);
+              merged.set(incomingPcmResidual);
+              merged.set(uint8, incomingPcmResidual.length);
+              uint8 = merged;
+              incomingPcmResidual = null;
+            }
+
+            if (uint8.length % 2 !== 0) {
+              incomingPcmResidual = uint8.slice(uint8.length - 1);
+              uint8 = uint8.slice(0, uint8.length - 1);
+            }
+
+            if (uint8.length > 0) {
+              const int16Chunk = new Int16Array(uint8.buffer, uint8.byteOffset, uint8.length / 2);
+              playIncomingPcm(int16Chunk);
+            }
+          }
+        };
+
+        ws.onclose = () => { endCall(); };
+        ws.onerror = () => { endCall(); };
+
+      } catch (err) {
+        alert("Error de micrófono o conexión: " + err.message);
+        endCall();
+      }
+    }
+
+    let comfortNoiseNode = null;
+    let comfortNoiseGain = null;
+
+    function startComfortNoise() {
+      if (!audioCtx) return;
+      try {
+        stopComfortNoise();
+        const bufferSize = audioCtx.sampleRate * 2;
+        const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+        const output = noiseBuffer.getChannelData(0);
+        let b0 = 0, b1 = 0, b2 = 0;
+        for (let i = 0; i < bufferSize; i++) {
+          const white = Math.random() * 2 - 1;
+          b0 = 0.99765 * b0 + white * 0.0990460;
+          b1 = 0.96300 * b1 + white * 0.2965164;
+          b2 = 0.57000 * b2 + white * 1.0526913;
+          output[i] = (b0 + b1 + b2 + white * 0.1848) * 0.04;
+        }
+
+        const whiteNoise = audioCtx.createBufferSource();
+        whiteNoise.buffer = noiseBuffer;
+        whiteNoise.loop = true;
+
+        const bandpass = audioCtx.createBiquadFilter();
+        bandpass.type = "bandpass";
+        bandpass.frequency.value = 1100;
+        bandpass.Q.value = 0.7;
+
+        comfortNoiseGain = audioCtx.createGain();
+        // Ruido de confort telefónico ultra-sutil (-58 dB) para evitar el "silencio digital muerto"
+        comfortNoiseGain.gain.value = 0.0012;
+
+        whiteNoise.connect(bandpass);
+        bandpass.connect(comfortNoiseGain);
+        comfortNoiseGain.connect(audioCtx.destination);
+        whiteNoise.start(0);
+        comfortNoiseNode = whiteNoise;
+      } catch (e) {
+        console.warn("No se pudo iniciar comfort noise:", e);
+      }
+    }
+
+    function stopComfortNoise() {
+      if (comfortNoiseNode) {
+        try { comfortNoiseNode.stop(); } catch {}
+        try { comfortNoiseNode.disconnect(); } catch {}
+        comfortNoiseNode = null;
+      }
+      if (comfortNoiseGain) {
+        try { comfortNoiseGain.disconnect(); } catch {}
+        comfortNoiseGain = null;
+      }
+    }
+
+    function setupMicProcessing() {
+      startComfortNoise();
+      micSource = audioCtx.createMediaStreamSource(micStream);
+      const analyser = audioCtx.createAnalyser();
+      analyser.fftSize = 64;
+      micSource.connect(analyser);
+
+      const animInterval = setInterval(() => {
+        if (!isCallActive) return clearInterval(animInterval);
+        analyser.getByteFrequencyData(visualizerData);
+      }, 50);
+
+      const bufferSize = 2048;
+      micProcessor = audioCtx.createScriptProcessor(bufferSize, 1, 1);
+      micSource.connect(micProcessor);
+
+      // Desconectar COMPLETAMENTE de los altavoces: Conectar a un nodo de ganancia 0.0 enlazado a destination
+      // para que Chromium mantenga vivo el procesador de audio pero NUNCA reproduzca el micro por los altavoces
+      const isolatedNode = audioCtx.createGain();
+      isolatedNode.gain.value = 0.0;
+      micProcessor.connect(isolatedNode);
+      try { isolatedNode.connect(audioCtx.destination); } catch {}
+      window._micProcessor = micProcessor;
+
+      if (isMicMuted && micStream) {
+        micStream.getAudioTracks().forEach(t => { t.enabled = false; });
+      }
+
+      const sourceSampleRate = audioCtx.sampleRate;
+
+      micProcessor.onaudioprocess = (e) => {
+        // Silenciar la salida inmediatamente
+        const outFloat = e.outputBuffer.getChannelData(0);
+        outFloat.fill(0);
+
+        if (!isCallActive || !ws || ws.readyState !== WebSocket.OPEN) return;
+        if (isMicMuted) return; // Si el micrófono está silenciado, no enviar paquetes de voz al servidor
+
+        const inputFloat = e.inputBuffer.getChannelData(0);
+
+        // Si el asistente está reproduciendo audio activamente por los altavoces,
+        // suprimir el eco acústico residual que se cuela por el micrófono
+        if (activeSources.length > 0) {
+          let sumSq = 0;
+          for (let i = 0; i < inputFloat.length; i++) {
+            sumSq += inputFloat[i] * inputFloat[i];
+          }
+          const rms = Math.sqrt(sumSq / inputFloat.length);
+          // Si el audio capturado es de bajo/medio volumen (< 0.025), es eco del altavoz: descartar chunk
+          if (rms < 0.025) {
+            return;
+          }
+        }
+
+        // Remuestrear a 16000 Hz si el hardware del cliente es 44.1k o 48k
+        let resampled;
+        if (sourceSampleRate === 16000) {
+          resampled = inputFloat;
+        } else {
+          const ratio = sourceSampleRate / 16000;
+          const outLen = Math.floor(inputFloat.length / ratio);
+          resampled = new Float32Array(outLen);
+          for (let i = 0; i < outLen; i++) {
+            const srcIdx = i * ratio;
+            const low = Math.floor(srcIdx);
+            const high = Math.min(low + 1, inputFloat.length - 1);
+            const frac = srcIdx - low;
+            resampled[i] = inputFloat[low] * (1 - frac) + inputFloat[high] * frac;
+          }
+        }
+
+        // Convertir a PCM 16-bit LE
+        const int16Array = new Int16Array(resampled.length);
+        for (let i = 0; i < resampled.length; i++) {
+          const s = Math.max(-1, Math.min(1, resampled[i]));
+          int16Array[i] = s < 0 ? s * 32768 : s * 32767;
+        }
+        ws.send(int16Array.buffer);
+      };
+    }
+
+    function playIncomingPcm(int16Chunk) {
+      if (!audioCtx || !isCallActive || int16Chunk.length === 0) return;
+
+      // El audio llega en mono 16000 Hz desde Together AI
+      const audioBuffer = audioCtx.createBuffer(1, int16Chunk.length, 16000);
+      const channelData = audioBuffer.getChannelData(0);
+      for (let i = 0; i < int16Chunk.length; i++) {
+        channelData[i] = int16Chunk[i] / 32768.0;
+      }
+
+      const source = audioCtx.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioCtx.destination);
+
+      const currentTime = audioCtx.currentTime;
+      // Pre-buffer de 100 ms si la cola se vació o empieza turno nuevo para evitar chasquidos/cortes
+      if (nextAudioTime < currentTime) {
+        nextAudioTime = currentTime + 0.10;
+      }
+
+      const startTime = nextAudioTime;
+      source.start(startTime);
+      nextAudioTime = startTime + audioBuffer.duration;
+      activeSources.push(source);
+
+      source.onended = () => {
+        const idx = activeSources.indexOf(source);
+        if (idx !== -1) activeSources.splice(idx, 1);
+        checkIfTurnDrained();
+      };
+    }
+
+    // Comprobación rigurosa de drenado de reproducción
+    function checkIfTurnDrained() {
+      if (
+        turnEndReceivedForTurn === currentTurnId &&
+        drainedReportedForTurn !== currentTurnId &&
+        activeSources.length === 0 &&
+        audioCtx &&
+        audioCtx.currentTime >= nextAudioTime - 0.05
+      ) {
+        drainedReportedForTurn = currentTurnId;
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "playback_drained", turnId: currentTurnId }));
+        }
+      }
+    }
+
+    function flushAudioPlayback() {
+      for (const s of activeSources) {
+        try { s.stop(); } catch {}
+      }
+      activeSources = [];
+      incomingPcmResidual = null;
+      if (audioCtx) {
+        nextAudioTime = audioCtx.currentTime;
+      }
+      turnEndReceivedForTurn = -1;
+    }
+
+    const STAGE_NAMES = {
+      1: "Presentación",
+      2: "Propuesta",
+      3: "Aclaraciones",
+      4: "Autorización y Contacto",
+      5: "Despedida"
+    };
+
+    function updateStateMonitorUI(ctx) {
+      if (!ctx) return;
+      const stage = ctx.currentStage || 1;
+
+      // 1. Actualizar Stepper de 5 Etapas
+      for (let i = 1; i <= 5; i++) {
+        const stepEl = document.getElementById("step-" + i);
+        if (stepEl) {
+          stepEl.classList.remove("active", "completed");
+          if (i < stage) {
+            stepEl.classList.add("completed");
+          } else if (i === stage) {
+            stepEl.classList.add("active");
+          }
+        }
+      }
+
+      // 2. Actualizar Monitor de Estado
+      const stageBadge = document.getElementById("liveCurrentStageBadge");
+      if (stageBadge) stageBadge.textContent = `Etapa ${stage}: ${STAGE_NAMES[stage] || ''}`;
+
+      const bizEl = document.getElementById("monBusinessConfirmed");
+      if (bizEl) bizEl.innerHTML = ctx.businessConfirmed ? '<span style="color:#34d399;">✅ Sí</span>' : '<span style="color:var(--text-muted);">⏳ Pendiente</span>';
+
+      const qEl = document.getElementById("monPendingQuestion");
+      if (qEl) {
+        let qText = "NINGUNA";
+        if (ctx.pendingQuestion === "OFFER_PROPOSAL") qText = "PROPUESTA DE MUESTRA";
+        else if (ctx.pendingQuestion === "WHATSAPP_PERMISSION") qText = "PERMISO DE WHATSAPP";
+        else if (ctx.pendingQuestion === "CONFIRM_PHONE") qText = "CONFIRMAR TELÉFONO";
+        qEl.textContent = qText;
+      }
+
+      const waEl = document.getElementById("monWhatsappAuth");
+      if (waEl) waEl.innerHTML = ctx.whatsappAuthorized ? '<span style="color:#34d399;">✅ Concedido</span>' : '<span style="color:var(--text-muted);">⏳ Pendiente</span>';
+
+      const phoneEl = document.getElementById("monPhoneConfirmed");
+      if (phoneEl) {
+        phoneEl.textContent = "";
+        const span = document.createElement("span");
+        if (ctx.phoneConfirmed) {
+          span.style.color = "#34d399";
+          span.textContent = `✅ ${ctx.confirmedPhone || 'Confirmado'}`;
+        } else {
+          span.style.color = "var(--text-muted)";
+          span.textContent = "⏳ Pendiente";
+        }
+        phoneEl.appendChild(span);
+      }
+
+      const doubtsEl = document.getElementById("monDoubtsResolved");
+      if (doubtsEl) {
+        doubtsEl.textContent = "";
+        if (ctx.doubtsResolved && ctx.doubtsResolved.length > 0) {
+          ctx.doubtsResolved.forEach(d => {
+            const chip = document.createElement("span");
+            chip.className = "chip";
+            chip.style.fontSize = "0.68rem";
+            chip.style.padding = "0.15rem 0.45rem";
+            chip.style.marginRight = "0.25rem";
+            chip.textContent = d;
+            doubtsEl.appendChild(chip);
+          });
+        } else {
+          doubtsEl.textContent = "Ninguna";
+        }
+      }
+
+      const outcomeEl = document.getElementById("monOutcomeStatus");
+      if (outcomeEl) {
+        outcomeEl.textContent = ctx.outcomeStatus || "EN_CURSO";
+        if (ctx.outcomeStatus === "AUTORIZADO") outcomeEl.style.color = "#34d399";
+        else if (ctx.outcomeStatus === "RECHAZADO") outcomeEl.style.color = "#fb7185";
+        else if (ctx.outcomeStatus === "PERSONA_EQUIVOCADA") outcomeEl.style.color = "#fbbf24";
+        else if (ctx.outcomeStatus === "LLAMAR_DESPUES") outcomeEl.style.color = "#c084fc";
+        else outcomeEl.style.color = "#38bdf8";
+      }
+
+      if (ctx.whatsappAuthorized && ctx.phoneConfirmed) {
+        whatsappCard.className = "whatsapp-card authorized";
+        whatsappBadge.textContent = "AUTORIZADO ✅";
+      }
+    }
+
+    function handleServerEvent(msg) {
+      // Filtrar aislamiento de sesiones
+      if (msg.sessionId && mySessionId && msg.sessionId !== mySessionId && msg.sessionId !== "global") {
+        return;
+      }
+
+      if (msg.type === "session_id") {
+        mySessionId = msg.sessionId;
+      } else if (msg.type === "state") {
+        setState(msg.state);
+      } else if (msg.type === "transcript") {
+        addMessage(msg.role, msg.text, msg.interrupted);
+      } else if (msg.type === "role_changed") {
+        const roleBadge = document.getElementById("metricRoleBadge");
+        if (roleBadge) {
+          if (msg.role === "technical") {
+            roleBadge.textContent = "👨‍🔧 Técnico (Marcos)";
+            roleBadge.style.color = "#c084fc";
+          } else {
+            roleBadge.textContent = "💼 Comercial (Juan)";
+            roleBadge.style.color = "#34d399";
+          }
+        }
+      } else if (msg.type === "handoff_state") {
+        const handoffBadge = document.getElementById("metricHandoffBadge");
+        if (handoffBadge) {
+          if (msg.state === "active") {
+            handoffBadge.textContent = "Activo";
+            handoffBadge.style.color = "#34d399";
+          } else if (msg.state === "preparing" || msg.state === "announcing" || msg.state === "switching") {
+            handoffBadge.textContent = "Transfiriendo...";
+            handoffBadge.style.color = "#fbbf24";
+          } else if (msg.state === "failed") {
+            handoffBadge.textContent = "Fallo traspaso";
+            handoffBadge.style.color = "#fb7185";
+          } else {
+            handoffBadge.textContent = "En espera";
+            handoffBadge.style.color = "#94a3b8";
+          }
+        }
+      } else if (msg.type === "usage_update") {
+        const costBadge = document.getElementById("metricCostBadge");
+        if (costBadge && msg.costSummary) {
+          costBadge.textContent = "$" + Number(msg.costSummary.totalCostUsd).toFixed(4);
+          if (msg.costSummary.hardLimitExceeded) {
+            costBadge.style.color = "#fb7185";
+          } else if (msg.costSummary.alertTriggered) {
+            costBadge.style.color = "#fbbf24";
+          } else {
+            costBadge.style.color = "#38bdf8";
+          }
+        }
+      } else if (msg.type === "provider_error") {
+        console.error("[Proveedor Error]:", msg.error);
+        const costBadge = document.getElementById("metricCostBadge");
+        if (costBadge) costBadge.title = "Error: " + msg.error;
+      } else if (msg.type === "turn_start") {
+        currentTurnId = msg.turnId;
+        metricTurns.textContent = "#" + msg.turnId;
+        turnEndReceivedForTurn = -1;
+        drainedReportedForTurn = -1;
+      } else if (msg.type === "turn_end") {
+        turnEndReceivedForTurn = msg.turnId;
+        checkIfTurnDrained();
+      } else if (msg.type === "metrics") {
+        if (msg.ttft) metricTtft.textContent = msg.ttft + " ms";
+        if (msg.ttfa) metricTtfa.textContent = msg.ttfa + " ms";
+        if (msg.stt) metricStt.textContent = msg.stt + " ms";
+      } else if (msg.type === "stage_update") {
+        const ctx = msg.context || msg.sessionContext;
+        if (ctx) updateStateMonitorUI(ctx);
+      } else if (msg.type === "call_end") {
+        console.log("[Web UI] Recibido fin de llamada automático (call_end).");
+        endCall();
+      } else if (msg.type === "whatsapp_authorized") {
+        whatsappCard.className = "whatsapp-card authorized";
+        whatsappBadge.textContent = "AUTORIZADO ✅";
+      } else if (msg.type === "whatsapp_message_received") {
+        showWhatsAppBanner(`📩 WhatsApp de <strong>${msg.empresa || msg.phone}</strong>:<br>"${msg.text}"`, "#10b981");
+      } else if (msg.type === "whatsapp_ai_reply") {
+        showWhatsAppBanner(`🤖 Asistente IA WhatsApp respondió:<br>"${msg.text}"`, "#3b82f6");
+      } else if (msg.type === "flush") {
+        flushAudioPlayback();
+      }
+    }
+
+    function showWhatsAppBanner(html, color = "#10b981") {
+      let banner = document.getElementById("waLiveToast");
+      if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "waLiveToast";
+        banner.style.position = "fixed";
+        banner.style.bottom = "20px";
+        banner.style.right = "20px";
+        banner.style.zIndex = "99999";
+        banner.style.maxWidth = "380px";
+        banner.style.background = "#131b2e";
+        banner.style.borderRadius = "10px";
+        banner.style.padding = "12px 16px";
+        banner.style.boxShadow = "0 8px 30px rgba(0,0,0,0.5)";
+        banner.style.fontSize = "0.82rem";
+        banner.style.color = "#f8fafc";
+        banner.style.lineHeight = "1.4";
+        banner.style.transition = "all 0.3s ease";
+        document.body.appendChild(banner);
+      }
+      banner.style.border = `1px solid ${color}`;
+      banner.innerHTML = html;
+      banner.style.opacity = "1";
+      banner.style.transform = "translateY(0)";
+      clearTimeout(banner._timeout);
+      banner._timeout = setTimeout(() => {
+        banner.style.opacity = "0";
+        banner.style.transform = "translateY(10px)";
+      }, 8000);
+    }
+
+    function endCall() {
+      isCallActive = false;
+      callBtn.className = "call-btn idle";
+      callBtnIcon.textContent = "📞";
+      callBtnText.textContent = "Llamar";
+      setState("idle");
+
+      stopComfortNoise();
+      flushAudioPlayback();
+
+      if (typeof updateStateMonitorUI === "function") {
+        updateStateMonitorUI({
+          currentStage: 1,
+          businessConfirmed: false,
+          interestShown: false,
+          doubtsResolved: [],
+          pendingQuestion: "NONE",
+          whatsappAuthorized: false,
+          phoneConfirmed: false,
+          outcomeStatus: "FINALIZADA"
+        });
+      }
+
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+      if (micProcessor) {
+        try { micProcessor.disconnect(); } catch {}
+        micProcessor = null;
+      }
+      if (micSource) {
+        try { micSource.disconnect(); } catch {}
+        micSource = null;
+      }
+      if (audioCtx) {
+        try { audioCtx.close(); } catch {}
+        audioCtx = null;
+      }
+      if (ws) {
+        if (ws.readyState === WebSocket.OPEN) {
+          try { ws.send(JSON.stringify({ type: "call_end" })); } catch {}
+          ws.close();
+        }
+        ws = null;
+      }
+      isMicMuted = false;
+      incomingPcmResidual = null;
+      updateMicMuteUI();
+      visualizerData.fill(0);
+      loadHistoryTable();
+    }
+
+    // GESTIÓN DE CONFIGURACIÓN
+    window.setSpeedPreset = function(speed) {
+      document.getElementById("cfgTtsSpeed").value = speed;
+      document.getElementById("speedValLabel").textContent = Number(speed).toFixed(2) + "x";
+    };
+
+    async function loadConfigForm() {
+      try {
+        const res = await fetch("/api/config");
+        const cfg = await res.json();
+
+        // Modo de Conversación y OpenAI Realtime
+        const engineSelect = document.getElementById("cfgConversationEngine");
+        if (engineSelect) {
+          engineSelect.value = cfg.conversationEngine || "together_pipeline";
+          toggleEngineSettings(engineSelect.value);
+        }
+
+        const engineBadge = document.getElementById("metricEngineBadge");
+        if (engineBadge) {
+          if (cfg.conversationEngine === "gemini_live") engineBadge.textContent = "Gemini Live";
+          else if (cfg.conversationEngine === "openai_realtime") engineBadge.textContent = "OpenAI Realtime";
+          else engineBadge.textContent = "Together";
+        }
+
+        const openAiBadge = document.getElementById("openAiKeyBadge");
+        if (openAiBadge) {
+          if (cfg.openaiApiKeyConfigured) {
+            openAiBadge.textContent = "Configurada ✅ (" + (cfg.openaiApiKeyMasked || "sk-...****") + ")";
+            openAiBadge.style.color = "#34d399";
+            openAiBadge.style.background = "rgba(16, 185, 129, 0.2)";
+          } else {
+            openAiBadge.textContent = "Sin configurar ⚠️";
+            openAiBadge.style.color = "#fbbf24";
+            openAiBadge.style.background = "rgba(245, 158, 11, 0.2)";
+          }
+        }
+
+        const geminiBadge = document.getElementById("geminiKeyBadge");
+        if (geminiBadge) {
+          if (cfg.geminiApiKeyConfigured) {
+            geminiBadge.textContent = "Configurada ✅ (" + (cfg.geminiApiKeyMasked || "AIza...****") + ")";
+            geminiBadge.style.color = "#34d399";
+            geminiBadge.style.background = "rgba(16, 185, 129, 0.2)";
+          } else {
+            geminiBadge.textContent = "Sin configurar ⚠️";
+            geminiBadge.style.color = "#fbbf24";
+            geminiBadge.style.background = "rgba(245, 158, 11, 0.2)";
+          }
+        }
+
+        if (document.getElementById("cfgGeminiCommercialModel") && cfg.geminiCommercialModel) {
+          document.getElementById("cfgGeminiCommercialModel").value = cfg.geminiCommercialModel;
+        }
+        if (document.getElementById("cfgGeminiCommercialVoice") && cfg.geminiCommercialVoice) {
+          document.getElementById("cfgGeminiCommercialVoice").value = cfg.geminiCommercialVoice;
+        }
+
+        if (document.getElementById("cfgRealtimeCommercialModel")) {
+          document.getElementById("cfgRealtimeCommercialModel").value = cfg.realtimeCommercialModel || "gpt-realtime-2.1-mini";
+        }
+        if (document.getElementById("cfgRealtimeCommercialVoice")) {
+          document.getElementById("cfgRealtimeCommercialVoice").value = cfg.realtimeCommercialVoice || "marin";
+        }
+        if (document.getElementById("cfgRealtimeTechnicalModel")) {
+          document.getElementById("cfgRealtimeTechnicalModel").value = cfg.realtimeTechnicalModel || "gpt-realtime-2.1";
+        }
+        if (document.getElementById("cfgRealtimeTechnicalVoice")) {
+          document.getElementById("cfgRealtimeTechnicalVoice").value = cfg.realtimeTechnicalVoice || "cedar";
+        }
+        if (document.getElementById("cfgRealtimeTurnDetection")) {
+          document.getElementById("cfgRealtimeTurnDetection").value = cfg.realtimeTurnDetection || "semantic_vad";
+        }
+        if (document.getElementById("cfgCallCostAlertUsd")) {
+          document.getElementById("cfgCallCostAlertUsd").value = cfg.callCostAlertUsd || 0.10;
+        }
+        if (document.getElementById("cfgCallCostSoftLimitUsd")) {
+          document.getElementById("cfgCallCostSoftLimitUsd").value = cfg.callCostSoftLimitUsd || 0.20;
+        }
+        if (document.getElementById("cfgCallCostHardLimitUsd")) {
+          document.getElementById("cfgCallCostHardLimitUsd").value = cfg.callCostHardLimitUsd || 0.30;
+        }
+        if (document.getElementById("cfgHandoffTimeoutMs")) {
+          document.getElementById("cfgHandoffTimeoutMs").value = cfg.handoffTimeoutMs || 8000;
+        }
+
+        if (document.getElementById("cfgScriptVariant")) {
+          document.getElementById("cfgScriptVariant").value = cfg.scriptVariant || "cercano";
+          updateScriptVariantDescUI(cfg.scriptVariant || "cercano");
+        }
+
+        // Configuración Netelip SIP & Transferencia a Humano
+        if (document.getElementById("cfgSipProvider")) document.getElementById("cfgSipProvider").value = cfg.sipProvider || "netelip";
+        if (document.getElementById("cfgSipServer")) document.getElementById("cfgSipServer").value = cfg.sipServer || "sip.netelip.com";
+        if (document.getElementById("cfgSipUser")) document.getElementById("cfgSipUser").value = cfg.sipUser || "";
+        if (document.getElementById("cfgSipPassword")) document.getElementById("cfgSipPassword").value = cfg.sipPassword || "";
+        if (document.getElementById("cfgSipCallerId")) document.getElementById("cfgSipCallerId").value = cfg.sipCallerId || "";
+        if (document.getElementById("cfgHumanTransferPhone")) document.getElementById("cfgHumanTransferPhone").value = cfg.humanTransferPhone || "";
+        if (document.getElementById("cfgHumanTransferName")) document.getElementById("cfgHumanTransferName").value = cfg.humanTransferName || "Miguel";
+        if (document.getElementById("cfgNotifyTransferViaWhatsApp")) document.getElementById("cfgNotifyTransferViaWhatsApp").value = cfg.notifyTransferViaWhatsApp !== false ? "true" : "false";
+
+        document.getElementById("cfgSystemPrompt").value = cfg.systemPrompt || "";
+        document.getElementById("cfgInstallPrice").value = cfg.installPrice || "99";
+        document.getElementById("cfgMonthlyBasic").value = cfg.monthlyPriceBasic || "5";
+        document.getElementById("cfgMonthlyFull").value = cfg.monthlyPriceFull || "10";
+        document.getElementById("cfgTtsVoice").value = cfg.ttsVoice || "ef_dora";
+        const speed = cfg.ttsSpeed !== undefined ? cfg.ttsSpeed : 1.00;
+        document.getElementById("cfgTtsSpeed").value = speed;
+        document.getElementById("speedValLabel").textContent = Number(speed).toFixed(2) + "x";
+        if (document.getElementById("cfgNaturalPauses")) {
+          document.getElementById("cfgNaturalPauses").value = cfg.naturalPauses !== false ? "true" : "false";
+        }
+        document.getElementById("cfgLlmModel").value = cfg.llmModel || "Qwen/Qwen3.5-9B";
+        document.getElementById("cfgMaxTokens").value = cfg.maxTokens || 90;
+        document.getElementById("cfgDisableReasoning").value = cfg.disableReasoning !== false ? "true" : "false";
+
+        // Cargar Etapas y Objeciones
+        if (cfg.stages) {
+          const s = cfg.stages;
+          if (s.stage1) {
+            if (document.getElementById("cfgStage1Goal")) document.getElementById("cfgStage1Goal").value = s.stage1.goal || "";
+            if (document.getElementById("cfgStage1Phrase")) document.getElementById("cfgStage1Phrase").value = s.stage1.guidePhrase || "";
+            if (document.getElementById("cfgStage1Cond")) document.getElementById("cfgStage1Cond").value = s.stage1.advanceCondition || "";
+          }
+          if (s.stage2) {
+            if (document.getElementById("cfgStage2Goal")) document.getElementById("cfgStage2Goal").value = s.stage2.goal || "";
+            if (document.getElementById("cfgStage2Phrase")) document.getElementById("cfgStage2Phrase").value = s.stage2.guidePhrase || "";
+            if (document.getElementById("cfgStage2Cond")) document.getElementById("cfgStage2Cond").value = s.stage2.advanceCondition || "";
+          }
+          if (s.stage3) {
+            if (document.getElementById("cfgStage3Goal")) document.getElementById("cfgStage3Goal").value = s.stage3.goal || "";
+            if (document.getElementById("cfgStage3Phrase")) document.getElementById("cfgStage3Phrase").value = s.stage3.guidePhrase || "";
+            if (document.getElementById("cfgStage3Cond")) document.getElementById("cfgStage3Cond").value = s.stage3.advanceCondition || "";
+          }
+          if (s.stage4) {
+            if (document.getElementById("cfgStage4Goal")) document.getElementById("cfgStage4Goal").value = s.stage4.goal || "";
+            if (document.getElementById("cfgStage4Phrase")) document.getElementById("cfgStage4Phrase").value = s.stage4.guidePhrase || "";
+            if (document.getElementById("cfgStage4Cond")) document.getElementById("cfgStage4Cond").value = s.stage4.advanceCondition || "";
+          }
+          if (s.stage5) {
+            if (document.getElementById("cfgStage5Goal")) document.getElementById("cfgStage5Goal").value = s.stage5.goal || "";
+            if (document.getElementById("cfgStage5Phrase")) document.getElementById("cfgStage5Phrase").value = s.stage5.guidePhrase || "";
+            if (document.getElementById("cfgStage5Cond")) document.getElementById("cfgStage5Cond").value = s.stage5.advanceCondition || "";
+          }
+          if (s.objections) {
+            if (document.getElementById("cfgObjPrice")) document.getElementById("cfgObjPrice").value = s.objections.price || "";
+            if (document.getElementById("cfgObjAlreadyHasWeb")) document.getElementById("cfgObjAlreadyHasWeb").value = s.objections.alreadyHasWeb || "";
+            if (document.getElementById("cfgObjNoTime")) document.getElementById("cfgObjNoTime").value = s.objections.noTime || "";
+            if (document.getElementById("cfgObjCallLater")) document.getElementById("cfgObjCallLater").value = s.objections.callLater || "";
+            if (document.getElementById("cfgObjWrongPerson")) document.getElementById("cfgObjWrongPerson").value = s.objections.wrongPerson || "";
+            if (document.getElementById("cfgObjRefusal")) document.getElementById("cfgObjRefusal").value = s.objections.refusal || "";
+          }
+        }
+
+        // Cargar configuración del Worker de WhatsApp y Plantilla
+        await loadWhatsAppWorkerConfig();
+      } catch (err) {
+        console.error("Error cargando config:", err);
+      }
+    }
+
+    let isWaWorkerRunning = false;
+    let currentCrmProyecto = null;
+
+    async function loadWhatsAppWorkerConfig() {
+      try {
+        const [waRes, proyRes] = await Promise.all([
+          fetch("/api/crm/worker/whatsapp/status"),
+          fetch("/api/crm/proyectos"),
+        ]);
+        if (waRes.ok) {
+          const waStatus = await waRes.json();
+          isWaWorkerRunning = Boolean(waStatus.running);
+          const waCfg = waStatus.config || {};
+          if (document.getElementById("cfgWaProvider")) {
+            document.getElementById("cfgWaProvider").value = waCfg.provider || "mock";
+          }
+          if (document.getElementById("cfgWaWebhookUrl")) {
+            document.getElementById("cfgWaWebhookUrl").value = waCfg.webhookUrl || "http://localhost:3002/api/whatsapp/send";
+          }
+          if (document.getElementById("cfgWaMaxDaily")) {
+            document.getElementById("cfgWaMaxDaily").value = waCfg.maxDailyMessages ?? 50;
+          }
+          if (document.getElementById("cfgWaSendDelay")) {
+            document.getElementById("cfgWaSendDelay").value = waCfg.sendDelayMs ?? 2000;
+          }
+          if (document.getElementById("cfgWaJitterDelay")) {
+            document.getElementById("cfgWaJitterDelay").value = waCfg.jitterDelayMs ?? 1000;
+          }
+          updateWaWorkerBadgeUI(waStatus);
+        }
+        if (proyRes.ok) {
+          const proyectos = await proyRes.json();
+          if (Array.isArray(proyectos) && proyectos.length > 0) {
+            currentCrmProyecto = proyectos[0];
+            if (document.getElementById("cfgWaTemplate")) {
+              document.getElementById("cfgWaTemplate").value =
+                (currentCrmProyecto.plantillas_whatsapp && currentCrmProyecto.plantillas_whatsapp.default) ||
+                "¡Hola {{nombre}}! Como acordamos en la llamada, aquí tienes la muestra web interactiva de {{oficio}} que preparamos para ti: {{enlace}} . Échale un vistazo cuando puedas. ¡Un saludo!";
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("Error cargando estado del Worker de WhatsApp:", e);
+      }
+    }
+
+    function updateWaWorkerBadgeUI(waStatus) {
+      const badge = document.getElementById("waWorkerStatusBadge");
+      const btn = document.getElementById("btnToggleWaWorkerConfig");
+      const logBox = document.getElementById("waWorkerLastLogBox");
+      if (badge) {
+        if (waStatus.running) {
+          badge.style.background = "rgba(16, 185, 129, 0.2)";
+          badge.style.color = "#34d399";
+          badge.textContent = `🟢 ACTIVO (${waStatus.messagesSentToday || 0}/${waStatus.config?.maxDailyMessages || 50} hoy)`;
+        } else {
+          badge.style.background = "rgba(148, 163, 184, 0.2)";
+          badge.style.color = "#94a3b8";
+          badge.textContent = `⚪ DETENIDO (${waStatus.messagesSentToday || 0}/${waStatus.config?.maxDailyMessages || 50} hoy)`;
+        }
+      }
+      if (btn) {
+        btn.className = waStatus.running ? "btn btn-danger" : "btn btn-emerald";
+        btn.innerHTML = waStatus.running ? "<span>⏹ Detener Worker</span>" : "<span>▶ Iniciar Worker</span>";
+      }
+      if (logBox) {
+        logBox.textContent = `Último evento: ${waStatus.lastLog || "Sin actividad"} | Total enviados: ${waStatus.totalMessagesSent || 0}`;
+      }
+    }
+
+    const btnToggleWaWorkerConfig = document.getElementById("btnToggleWaWorkerConfig");
+    if (btnToggleWaWorkerConfig) {
+      btnToggleWaWorkerConfig.addEventListener("click", async () => {
+        const endpoint = isWaWorkerRunning ? "/api/crm/worker/whatsapp/stop" : "/api/crm/worker/whatsapp/start";
+        await fetch(endpoint, { method: "POST" });
+        await loadWhatsAppWorkerConfig();
+      });
+    }
+
+    // GESTIÓN DE LÍNEA DE WHATSAPP NATIVA (BAILEYS + CÓDIGO QR)
+    let waLinePollInterval = null;
+
+    async function pollWhatsAppLineStatus() {
+      try {
+        const res = await fetch("/api/whatsapp/status");
+        if (!res.ok) return;
+        const data = await res.json();
+        updateWhatsAppLineUI(data);
+      } catch (e) {
+        console.warn("Error consultando estado de WhatsApp:", e);
+      }
+    }
+
+    function updateWhatsAppLineUI(data) {
+      const badge = document.getElementById("waLineStatusBadge");
+      const qrBox = document.getElementById("waQrBox");
+      const qrImg = document.getElementById("waQrImg");
+      const connectedBox = document.getElementById("waConnectedBox");
+      const phoneDisplay = document.getElementById("waConnectedPhoneDisplay");
+      const nameDisplay = document.getElementById("waConnectedNameDisplay");
+      const btnConnect = document.getElementById("btnConnectWaQr");
+      const btnLogout = document.getElementById("btnLogoutWa");
+
+      if (data.status === "connected") {
+        if (badge) {
+          badge.style.background = "rgba(16, 185, 129, 0.2)";
+          badge.style.color = "#34d399";
+          badge.textContent = `🟢 CONECTADO (${data.phone || "Activo"})`;
+        }
+        if (qrBox) qrBox.style.display = "none";
+        if (connectedBox) connectedBox.style.display = "block";
+        if (phoneDisplay) phoneDisplay.textContent = data.phone || "Activo";
+        if (nameDisplay) nameDisplay.textContent = data.name || "Mi Teléfono";
+        if (btnConnect) btnConnect.style.display = "none";
+        if (btnLogout) btnLogout.style.display = "inline-flex";
+      } else if (data.status === "connecting") {
+        if (badge) {
+          badge.style.background = "rgba(245, 158, 11, 0.2)";
+          badge.style.color = "#fbbf24";
+          badge.textContent = "🟡 ESPERANDO ESCANEO QR";
+        }
+        if (connectedBox) connectedBox.style.display = "none";
+        if (btnLogout) btnLogout.style.display = "none";
+        if (btnConnect) {
+          btnConnect.style.display = "inline-flex";
+          btnConnect.innerHTML = "<span>🔄 Generar Nuevo QR</span>";
+        }
+        if (qrBox) qrBox.style.display = "block";
+        const loadingText = document.getElementById("waQrLoadingText");
+        const imgWrapper = document.getElementById("waQrImgWrapper");
+        if (data.qrCodeDataUrl) {
+          if (loadingText) loadingText.style.display = "none";
+          if (imgWrapper) imgWrapper.style.display = "block";
+          if (qrImg) qrImg.src = data.qrCodeDataUrl;
+        } else {
+          if (loadingText) loadingText.style.display = "block";
+          if (imgWrapper) imgWrapper.style.display = "none";
+        }
+      } else {
+        if (badge) {
+          badge.style.background = "rgba(148, 163, 184, 0.2)";
+          badge.style.color = "#94a3b8";
+          badge.textContent = "⚪ DESCONECTADO";
+        }
+        if (qrBox) qrBox.style.display = "none";
+        if (connectedBox) connectedBox.style.display = "none";
+        if (btnLogout) btnLogout.style.display = "none";
+        if (btnConnect) {
+          btnConnect.style.display = "inline-flex";
+          btnConnect.innerHTML = "<span>▶ Conectar / Generar QR</span>";
+        }
+      }
+    }
+
+    const btnConnectWaQr = document.getElementById("btnConnectWaQr");
+    if (btnConnectWaQr) {
+      btnConnectWaQr.addEventListener("click", async () => {
+        btnConnectWaQr.innerHTML = "<span>⏳ Generando QR...</span>";
+        const qrBox = document.getElementById("waQrBox");
+        const loadingText = document.getElementById("waQrLoadingText");
+        const imgWrapper = document.getElementById("waQrImgWrapper");
+        if (qrBox) qrBox.style.display = "block";
+        if (loadingText) loadingText.style.display = "block";
+        if (imgWrapper) imgWrapper.style.display = "none";
+
+        try {
+          const res = await fetch("/api/whatsapp/connect", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ forceNew: true }),
+          });
+          const data = await res.json();
+          updateWhatsAppLineUI(data);
+
+          // Sondeos inmediatos para captar el QR en cuanto Baileys lo emita (1 a 3 segundos)
+          setTimeout(pollWhatsAppLineStatus, 800);
+          setTimeout(pollWhatsAppLineStatus, 1800);
+          setTimeout(pollWhatsAppLineStatus, 3000);
+
+          if (!waLinePollInterval) {
+            waLinePollInterval = setInterval(pollWhatsAppLineStatus, 3000);
+          }
+        } catch (e) {
+          alert("Error iniciando conexión de WhatsApp: " + e.message);
+        }
+      });
+    }
+
+    const btnLogoutWa = document.getElementById("btnLogoutWa");
+    if (btnLogoutWa) {
+      btnLogoutWa.addEventListener("click", async () => {
+        if (!confirm("¿Cerrar la sesión de WhatsApp de esta línea?")) return;
+        try {
+          await fetch("/api/whatsapp/logout", { method: "POST" });
+          await pollWhatsAppLineStatus();
+        } catch (e) {
+          alert("Error cerrando sesión: " + e.message);
+        }
+      });
+    }
+
+    const btnSendWaTest = document.getElementById("btnSendWaTest");
+    if (btnSendWaTest) {
+      btnSendWaTest.addEventListener("click", async () => {
+        const phone = document.getElementById("waTestPhone")?.value.trim();
+        const msg = document.getElementById("waTestMessage")?.value.trim();
+        const resBox = document.getElementById("waTestResultMsg");
+        if (!phone) {
+          alert("Por favor introduce un número de teléfono para la prueba.");
+          return;
+        }
+        if (resBox) {
+          resBox.style.display = "block";
+          resBox.style.color = "#38bdf8";
+          resBox.textContent = "⏳ Enviando mensaje de prueba...";
+        }
+        try {
+          const res = await fetch("/api/whatsapp/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone, message: msg }),
+          });
+          const data = await res.json();
+          if (resBox) {
+            if (data.success) {
+              resBox.style.color = "#34d399";
+              resBox.textContent = `✅ Mensaje enviado con éxito a ${phone} (ID: ${data.messageId || 'OK'})`;
+            } else {
+              resBox.style.color = "#f87171";
+              resBox.textContent = `❌ Fallo de envío: ${data.error || 'Desconocido'}`;
+            }
+          }
+        } catch (e) {
+          if (resBox) {
+            resBox.style.color = "#f87171";
+            resBox.textContent = `❌ Error de red: ${e.message}`;
+          }
+        }
+      });
+    }
+
+    // Iniciar sondeo de línea de WhatsApp periódicamente
+    pollWhatsAppLineStatus();
+    setInterval(pollWhatsAppLineStatus, 5000);
+
+    function toggleEngineSettings(engine) {
+      const realtimeBox = document.getElementById("openaiRealtimeSettings");
+      if (realtimeBox) {
+        realtimeBox.style.display = engine === "openai_realtime" ? "block" : "none";
+      }
+      const geminiBox = document.getElementById("geminiLiveSettings");
+      if (geminiBox) {
+        geminiBox.style.display = engine === "gemini_live" ? "block" : "none";
+      }
+      const togetherBox = document.getElementById("togetherTtsSettingsBox");
+      if (togetherBox) {
+        togetherBox.style.display = (engine === "openai_realtime" || engine === "gemini_live") ? "none" : "block";
+      }
+    }
+
+    const engineSelectElem = document.getElementById("cfgConversationEngine");
+    if (engineSelectElem) {
+      engineSelectElem.addEventListener("change", (e) => {
+        toggleEngineSettings(e.target.value);
+        const engineBadge = document.getElementById("metricEngineBadge");
+        if (engineBadge) {
+          if (e.target.value === "gemini_live") engineBadge.textContent = "Gemini Live";
+          else if (e.target.value === "openai_realtime") engineBadge.textContent = "OpenAI Realtime";
+          else engineBadge.textContent = "Together";
+        }
+      });
+    }
+
+    // Evento de cambio en el slider de velocidad
+    document.getElementById("cfgTtsSpeed").addEventListener("input", (e) => {
+      document.getElementById("speedValLabel").textContent = Number(e.target.value).toFixed(2) + "x";
+    });
+
+    // Botón de preescucha instantánea de la voz y velocidad seleccionadas
+    document.getElementById("btnPreviewSelectedVoice").addEventListener("click", () => {
+      const btn = document.getElementById("btnPreviewSelectedVoice");
+      const voice = document.getElementById("cfgTtsVoice").value;
+      const speed = document.getElementById("cfgTtsSpeed").value;
+      const customText = document.getElementById("previewVoiceText") ? document.getElementById("previewVoiceText").value : "";
+      playVoicePreview(btn, voice, speed, customText);
+    });
+
+    // Previews para voces de OpenAI Realtime
+    const femaleVoicesList = ["marin", "coral", "shimmer", "sage", "ballad"];
+    const btnPrevComm = document.getElementById("btnPreviewCommercialVoice");
+    if (btnPrevComm) {
+      btnPrevComm.addEventListener("click", () => {
+        const voice = document.getElementById("cfgRealtimeCommercialVoice").value;
+        const name = femaleVoicesList.includes(voice) ? "Laura" : "Juan";
+        playVoicePreview(btnPrevComm, voice, 1.0, `Hola, buenas. Soy ${name}, de Forja Web. Te llamo rápido para prepararte una muestra gratuita de tu página web.`);
+      });
+    }
+
+    const btnPrevTech = document.getElementById("btnPreviewTechnicalVoice");
+    if (btnPrevTech) {
+      btnPrevTech.addEventListener("click", () => {
+        const voice = document.getElementById("cfgRealtimeTechnicalVoice").value;
+        const name = femaleVoicesList.includes(voice) ? "Elena" : "Marcos";
+        playVoicePreview(btnPrevTech, voice, 1.0, `Hola, soy ${name}, responsable técnico de Forja Web. Te resuelvo tu duda en un momento.`);
+      });
+    }
+
+    function playVoicePreview(buttonElem, voice, speed, text) {
+      buttonElem.innerHTML = "<span>⏳ Sintetizando...</span>";
+      const audioUrl = `/api/preview-voice?voice=${encodeURIComponent(voice)}&speed=${speed}&text=${encodeURIComponent(text)}&t=${Date.now()}`;
+      const audio = new Audio(audioUrl);
+      audio.onended = () => {
+        buttonElem.innerHTML = "<span>▶ Probar Voz</span>";
+      };
+      audio.onerror = () => {
+        alert("Error generando audio con la voz seleccionada.");
+        buttonElem.innerHTML = "<span>▶ Probar Voz</span>";
+      };
+      audio.play().catch(err => {
+        alert("El navegador bloqueó la reproducción automática: " + err.message);
+        buttonElem.innerHTML = "<span>▶ Probar Voz</span>";
+      });
+    }
+
+    function updateScriptVariantDescUI(variant) {
+      const desc = document.getElementById("scriptVariantDesc");
+      if (!desc) return;
+      if (variant === "formal") {
+        desc.innerHTML = `🔵 <strong>Guion Formal:</strong> Trato de usted, auditoría de presencia digital corporativa en buscadores y muestra optimizada para captación móvil (99€ + 10€/mes).`;
+      } else if (variant === "ab_test") {
+        desc.innerHTML = `⚖️ <strong>Modo A/B Test Activo:</strong> El sistema alternará automáticamente el 50% de las llamadas con Guion Cercano y el 50% con Guion Formal para medir cuál genera más WhatsApps y aperturas de web.`;
+      } else {
+        desc.innerHTML = `🟡 <strong>Guion Cercano:</strong> Trato cercano de tú a tú, menciona ficha de Google Maps sin web y ofrece muestra previa rápida en 1 minuto por WhatsApp (99€ + 10€/mes).`;
+      }
+    }
+
+    const scriptVariantSelect = document.getElementById("cfgScriptVariant");
+    if (scriptVariantSelect) {
+      scriptVariantSelect.addEventListener("change", (e) => {
+        updateScriptVariantDescUI(e.target.value);
+      });
+    }
+
+    document.getElementById("configForm").onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = {
+        conversationEngine: document.getElementById("cfgConversationEngine") ? document.getElementById("cfgConversationEngine").value : "openai_realtime",
+        openaiApiKey: document.getElementById("cfgOpenAiApiKey") ? document.getElementById("cfgOpenAiApiKey").value : "",
+        geminiApiKey: document.getElementById("cfgGeminiApiKey") ? document.getElementById("cfgGeminiApiKey").value : "",
+        geminiCommercialModel: document.getElementById("cfgGeminiCommercialModel") ? document.getElementById("cfgGeminiCommercialModel").value : "gemini-2.0-flash-live-001",
+        geminiCommercialVoice: document.getElementById("cfgGeminiCommercialVoice") ? document.getElementById("cfgGeminiCommercialVoice").value : "Aoede",
+        realtimeCommercialModel: document.getElementById("cfgRealtimeCommercialModel") ? document.getElementById("cfgRealtimeCommercialModel").value : "gpt-realtime-2.1-mini",
+        realtimeCommercialVoice: document.getElementById("cfgRealtimeCommercialVoice") ? document.getElementById("cfgRealtimeCommercialVoice").value : "marin",
+        realtimeTechnicalModel: document.getElementById("cfgRealtimeTechnicalModel") ? document.getElementById("cfgRealtimeTechnicalModel").value : "gpt-realtime-2.1",
+        realtimeTechnicalVoice: document.getElementById("cfgRealtimeTechnicalVoice") ? document.getElementById("cfgRealtimeTechnicalVoice").value : "cedar",
+        realtimeTurnDetection: document.getElementById("cfgRealtimeTurnDetection") ? document.getElementById("cfgRealtimeTurnDetection").value : "semantic_vad",
+        callCostAlertUsd: parseFloat(document.getElementById("cfgCallCostAlertUsd")?.value || "0.10"),
+        callCostSoftLimitUsd: parseFloat(document.getElementById("cfgCallCostSoftLimitUsd")?.value || "0.20"),
+        callCostHardLimitUsd: parseFloat(document.getElementById("cfgCallCostHardLimitUsd")?.value || "0.30"),
+        handoffTimeoutMs: parseInt(document.getElementById("cfgHandoffTimeoutMs")?.value || "8000", 10),
+        scriptVariant: document.getElementById("cfgScriptVariant") ? document.getElementById("cfgScriptVariant").value : "cercano",
+
+        sipProvider: document.getElementById("cfgSipProvider") ? document.getElementById("cfgSipProvider").value : "netelip",
+        sipServer: document.getElementById("cfgSipServer") ? document.getElementById("cfgSipServer").value : "sip.netelip.com",
+        sipUser: document.getElementById("cfgSipUser") ? document.getElementById("cfgSipUser").value : "",
+        sipPassword: document.getElementById("cfgSipPassword") ? document.getElementById("cfgSipPassword").value : "",
+        sipCallerId: document.getElementById("cfgSipCallerId") ? document.getElementById("cfgSipCallerId").value : "",
+        humanTransferPhone: document.getElementById("cfgHumanTransferPhone") ? document.getElementById("cfgHumanTransferPhone").value : "",
+        humanTransferName: document.getElementById("cfgHumanTransferName") ? document.getElementById("cfgHumanTransferName").value : "Miguel",
+        notifyTransferViaWhatsApp: document.getElementById("cfgNotifyTransferViaWhatsApp") ? document.getElementById("cfgNotifyTransferViaWhatsApp").value === "true" : true,
+
+        systemPrompt: document.getElementById("cfgSystemPrompt").value,
+        installPrice: document.getElementById("cfgInstallPrice").value,
+        monthlyPriceBasic: document.getElementById("cfgMonthlyBasic").value,
+        monthlyPriceFull: document.getElementById("cfgMonthlyFull").value,
+        ttsVoice: document.getElementById("cfgTtsVoice").value,
+        ttsSpeed: parseFloat(document.getElementById("cfgTtsSpeed").value) || 1.0,
+        naturalPauses: document.getElementById("cfgNaturalPauses") ? document.getElementById("cfgNaturalPauses").value === "true" : true,
+        llmModel: document.getElementById("cfgLlmModel").value,
+        maxTokens: parseInt(document.getElementById("cfgMaxTokens").value, 10),
+        disableReasoning: document.getElementById("cfgDisableReasoning").value === "true",
+        stages: {
+          stage1: {
+            id: 1,
+            name: "Presentación",
+            goal: document.getElementById("cfgStage1Goal") ? document.getElementById("cfgStage1Goal").value : "",
+            guidePhrase: document.getElementById("cfgStage1Phrase") ? document.getElementById("cfgStage1Phrase").value : "",
+            advanceCondition: document.getElementById("cfgStage1Cond") ? document.getElementById("cfgStage1Cond").value : "",
+          },
+          stage2: {
+            id: 2,
+            name: "Propuesta",
+            goal: document.getElementById("cfgStage2Goal") ? document.getElementById("cfgStage2Goal").value : "",
+            guidePhrase: document.getElementById("cfgStage2Phrase") ? document.getElementById("cfgStage2Phrase").value : "",
+            advanceCondition: document.getElementById("cfgStage2Cond") ? document.getElementById("cfgStage2Cond").value : "",
+          },
+          stage3: {
+            id: 3,
+            name: "Aclaraciones",
+            goal: document.getElementById("cfgStage3Goal") ? document.getElementById("cfgStage3Goal").value : "",
+            guidePhrase: document.getElementById("cfgStage3Phrase") ? document.getElementById("cfgStage3Phrase").value : "",
+            advanceCondition: document.getElementById("cfgStage3Cond") ? document.getElementById("cfgStage3Cond").value : "",
+          },
+          stage4: {
+            id: 4,
+            name: "Autorización y Contacto",
+            goal: document.getElementById("cfgStage4Goal") ? document.getElementById("cfgStage4Goal").value : "",
+            guidePhrase: document.getElementById("cfgStage4Phrase") ? document.getElementById("cfgStage4Phrase").value : "",
+            advanceCondition: document.getElementById("cfgStage4Cond") ? document.getElementById("cfgStage4Cond").value : "",
+          },
+          stage5: {
+            id: 5,
+            name: "Despedida",
+            goal: document.getElementById("cfgStage5Goal") ? document.getElementById("cfgStage5Goal").value : "",
+            guidePhrase: document.getElementById("cfgStage5Phrase") ? document.getElementById("cfgStage5Phrase").value : "",
+            advanceCondition: document.getElementById("cfgStage5Cond") ? document.getElementById("cfgStage5Cond").value : "",
+          },
+          objections: {
+            price: document.getElementById("cfgObjPrice") ? document.getElementById("cfgObjPrice").value : "",
+            alreadyHasWeb: document.getElementById("cfgObjAlreadyHasWeb") ? document.getElementById("cfgObjAlreadyHasWeb").value : "",
+            noTime: document.getElementById("cfgObjNoTime") ? document.getElementById("cfgObjNoTime").value : "",
+            callLater: document.getElementById("cfgObjCallLater") ? document.getElementById("cfgObjCallLater").value : "",
+            wrongPerson: document.getElementById("cfgObjWrongPerson") ? document.getElementById("cfgObjWrongPerson").value : "",
+            refusal: document.getElementById("cfgObjRefusal") ? document.getElementById("cfgObjRefusal").value : "",
+          },
+        },
+      };
+
+      const waWorkerPayload = {
+        provider: document.getElementById("cfgWaProvider") ? document.getElementById("cfgWaProvider").value : "mock",
+        webhookUrl: document.getElementById("cfgWaWebhookUrl") ? document.getElementById("cfgWaWebhookUrl").value.trim() : "http://localhost:3002/api/whatsapp/send",
+        maxDailyMessages: parseInt(document.getElementById("cfgWaMaxDaily")?.value || "50", 10),
+        sendDelayMs: parseInt(document.getElementById("cfgWaSendDelay")?.value || "2000", 10),
+        jitterDelayMs: parseInt(document.getElementById("cfgWaJitterDelay")?.value || "1000", 10),
+      };
+
+      try {
+        const requests = [
+          fetch("/api/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }),
+          fetch("/api/crm/worker/whatsapp/config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(waWorkerPayload),
+          }),
+        ];
+
+        const waTemplateVal = document.getElementById("cfgWaTemplate") ? document.getElementById("cfgWaTemplate").value.trim() : "";
+        if (currentCrmProyecto && waTemplateVal) {
+          currentCrmProyecto.plantillas_whatsapp = {
+            ...(currentCrmProyecto.plantillas_whatsapp || {}),
+            default: waTemplateVal,
+          };
+          requests.push(
+            fetch("/api/crm/proyectos", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(currentCrmProyecto),
+            })
+          );
+        }
+
+        const [res] = await Promise.all(requests);
+        const data = await res.json();
+        alert(data.message || "Configuración guardada (incluyendo Worker de WhatsApp).");
+        loadConfigForm();
+      } catch (err) {
+        alert("Error guardando: " + err.message);
+      }
+    };
+
+    document.getElementById("btnTestApiConnection").onclick = async () => {
+      const box = document.getElementById("testConnectionResult");
+      box.style.display = "block";
+      box.innerHTML = `<div style="color: var(--accent-cyan); font-weight: 700;">Probando conexión con el motor activo...</div>`;
+      try {
+        const res = await fetch("/api/test-connection", { method: "POST" });
+        const data = await res.json();
+        if (data.ok) {
+          let detail = "";
+          if (data.engine === "gemini_live") {
+            detail = `Google Gemini Live respondió en <strong>${escapeHtml(data.latencyMs)} ms</strong> (Modelo: <code>${escapeHtml(data.commercialModel)}</code>, Voz: <code>${escapeHtml(data.commercialVoice)}</code>). Modelos verificados en cuenta: <code>${(data.availableModels || []).slice(0, 4).join(', ')}</code>.`;
+          } else if (data.engine === "openai_realtime") {
+            detail = `OpenAI Realtime respondió en <strong>${escapeHtml(data.latencyMs)} ms</strong> (Comercial: <code>${escapeHtml(data.commercialModel)} / ${escapeHtml(data.commercialVoice)}</code>, Técnico: <code>${escapeHtml(data.technicalModel)} / ${escapeHtml(data.technicalVoice)}</code>).`;
+          } else {
+            detail = `Together AI respondió en <strong>${escapeHtml(data.llmLatencyMs)} ms</strong> usando modelo <code>${escapeHtml(data.model)}</code> y voz <code>${escapeHtml(data.voice)}</code>.`;
+          }
+          box.innerHTML = `<div style="background: rgba(16, 185, 129, 0.15); border: 1px solid #10b981; padding: 0.75rem; border-radius: 8px; color: #34d399; font-size: 0.85rem;">
+            ✅ <strong>Conexión Exitosa:</strong> ${detail}
+          </div>`;
+        } else {
+          box.innerHTML = `<div style="background: rgba(244, 63, 94, 0.15); border: 1px solid #f43f5e; padding: 0.75rem; border-radius: 8px; color: #fb7185; font-size: 0.85rem;">
+            ❌ <strong>Fallo de Conexión:</strong> ${escapeHtml(data.message)}
+          </div>`;
+        }
+      } catch (err) {
+        box.innerHTML = `<div style="color: #fb7185;">Error de red: ${escapeHtml(err.message)}</div>`;
+      }
+    };
+
+    // CONTROL DE CENTRALITA NETELIP Y BRIDGE
+    async function refreshBridgeStatus() {
+      try {
+        const res = await fetch("/api/bridge/status");
+        const status = await res.json();
+        const badge = document.getElementById("bridgeStatusBadge");
+        if (status.running) {
+          badge.className = "badge badge-authorized";
+          badge.textContent = `🟢 ACTIVO (${(status.mode || 'netelip').toUpperCase()} - PID ${status.pid}, ${status.uptimeSeconds}s)`;
+        } else {
+          badge.className = "badge badge-no-answer";
+          badge.textContent = "DETENIDO";
+        }
+        document.getElementById("bridgeLogBox").innerHTML = status.logs.length
+          ? status.logs.map(l => `<div>${escapeHtml(l)}</div>`).join("")
+          : "Sin actividad reciente.";
+      } catch {}
+    }
+
+    const btnStartNetelip = document.getElementById("btnStartBridgeNetelip");
+    if (btnStartNetelip) {
+      btnStartNetelip.onclick = async () => {
+        const res = await fetch("/api/bridge/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: "netelip" }),
+        });
+        const data = await res.json();
+        alert(data.message);
+        refreshBridgeStatus();
+      };
+    }
+
+    const btnDialNetelip = document.getElementById("btnDialNetelip");
+    if (btnDialNetelip) {
+      btnDialNetelip.onclick = async () => {
+        const phone = document.getElementById("dialPhone").value;
+        const company = document.getElementById("dialCompany").value;
+        const resBox = document.getElementById("dialResultMsg");
+        if (!phone) return alert("Introduce un número de teléfono.");
+
+        resBox.textContent = "Marcando con Netelip SIP...";
+        try {
+          const res = await fetch("/api/netelip/dial", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone, company }),
+          });
+          const data = await res.json();
+          resBox.textContent = data.success ? `✅ ${data.message}` : `❌ ${data.message}`;
+        } catch (e) {
+          resBox.textContent = `❌ Error: ${e.message}`;
+        }
+      };
+    }
+
+    const btnHangupNetelip = document.getElementById("btnHangupNetelip");
+    if (btnHangupNetelip) {
+      btnHangupNetelip.onclick = async () => {
+        const resBox = document.getElementById("dialResultMsg");
+        resBox.textContent = "Colgando...";
+        try {
+          const res = await fetch("/api/netelip/hangup", { method: "POST" });
+          const data = await res.json();
+          resBox.textContent = data.success ? `📴 ${data.message}` : `❌ ${data.message}`;
+        } catch (e) {
+          resBox.textContent = `❌ Error: ${e.message}`;
+        }
+      };
+    }
+
+    const btnTransferNetelip = document.getElementById("btnTransferTestNetelip");
+    if (btnTransferNetelip) {
+      btnTransferNetelip.onclick = async () => {
+        const resBox = document.getElementById("dialResultMsg");
+        resBox.textContent = "Transfiriendo llamada...";
+        try {
+          const res = await fetch("/api/netelip/transfer", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: "" }),
+          });
+          const data = await res.json();
+          resBox.textContent = data.success ? `🔀 ${data.message}` : `❌ ${data.message}`;
+        } catch (e) {
+          resBox.textContent = `❌ Error: ${e.message}`;
+        }
+      };
+    }
+
+    document.getElementById("btnStopBridge").onclick = async () => {
+      const res = await fetch("/api/bridge/stop", { method: "POST" });
+      const data = await res.json();
+      alert(data.message);
+      refreshBridgeStatus();
+    };
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return "";
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    let historyTbodyEventsBound = false;
+
+    // TABLA DE HISTORIAL Y LEADS
+    async function loadHistoryTable() {
+      try {
+        const res = await fetch("/api/calls");
+        const calls = await res.json();
+        window.__lastCalls = calls;
+        const tbody = document.getElementById("historyTableBody");
+        const leadsCountBadge = document.getElementById("leadsCountBadge");
+
+        if (!historyTbodyEventsBound && tbody) {
+          historyTbodyEventsBound = true;
+          tbody.addEventListener("click", (e) => {
+            const dialogBtn = e.target.closest(".btn-view-dialog");
+            if (dialogBtn) {
+              e.stopPropagation();
+              const call = (window.__lastCalls || []).find(x => x.id === dialogBtn.dataset.id);
+              if (call) {
+                const text = (call.transcript || []).map(t => `${t.role}: ${t.text}`).join("\n");
+                alert("Transcripción:\n\n" + (text || "Sin diálogo grabado"));
+              }
+              return;
+            }
+            const sendWaBtn = e.target.closest(".btn-send-wa");
+            if (sendWaBtn) {
+              markSent(sendWaBtn.dataset.id);
+            }
+          });
+        }
+
+        const leads = calls.filter(c => c.whatsappAuthorized);
+        leadsCountBadge.textContent = leads.length;
+
+        if (calls.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: var(--text-muted); padding: 2rem;">No hay llamadas registradas todavía.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = calls.map(c => {
+          const dateStr = new Date(c.timestamp).toLocaleString();
+          let badgeClass = "badge-interested";
+          if (c.status === "AUTORIZADO") badgeClass = "badge-authorized";
+          else if (c.status === "RECHAZADO") badgeClass = "badge-rejected";
+          else if (c.status === "PERSONA_EQUIVOCADA") badgeClass = "badge-wrong";
+          else if (c.status === "LLAMAR_DESPUES") badgeClass = "badge-call-later";
+          else if (c.status === "NO_RESPONDE") badgeClass = "badge-no-answer";
+
+          const stageStr = c.currentStage ? `Etapa ${c.currentStage}` : '-';
+          const targetWaPhone = (c.confirmedPhone || c.phone || '').replace(/[^0-9]/g, '');
+
+          const safeCompany = escapeHtml(c.company || 'Sin nombre');
+          const safeId = escapeHtml(c.id);
+          const safePhoneDisplay = escapeHtml(c.confirmedPhone || c.phone || 'N/A');
+
+          const waBtn = c.whatsappAuthorized
+            ? (c.whatsappSent
+                ? `<span style="color: #34d399; font-weight: 700;">✅ Enviado</span>`
+                : `<a href="https://wa.me/${encodeURIComponent(targetWaPhone)}?text=${encodeURIComponent('¡Hola! Te contacto de parte de Kira para enviarte el enlace con la muestra web gratuita que comentamos. Puedes verla aquí: https://tuweb.com/muestra')}" target="_blank" rel="noopener noreferrer" class="btn btn-emerald btn-send-wa" data-id="${safeId}" style="padding: 0.35rem 0.65rem; font-size: 0.75rem;">📲 Enviar WhatsApp</a>`)
+            : `<span style="color: var(--text-muted);">No autorizado</span>`;
+
+          const phoneHtml = c.confirmedPhone
+            ? `<span style="color:#34d399; font-weight:700;">${safePhoneDisplay}</span>`
+            : safePhoneDisplay;
+
+          const variantTag = c.scriptVariant === 'formal'
+            ? `<span style="font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; background: rgba(59, 130, 246, 0.2); color: #93c5fd; font-weight: 700;">🔵 Formal</span>`
+            : `<span style="font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; background: rgba(245, 158, 11, 0.2); color: #fcd34d; font-weight: 700;">🟡 Cercano</span>`;
+
+          let analysisBadge = "";
+          if (c.analysis) {
+            const sent = c.analysis.sentiment || "neutral";
+            const sentEmoji = sent === "positive" ? "😊" : (sent === "frustrated" ? "😤" : (sent === "hesitant" ? "🤔" : "😐"));
+            const score = c.analysis.qualityScore ? `⭐ ${c.analysis.qualityScore}/10` : "";
+            const objTxt = c.analysis.objectionDetected && c.analysis.objectionDetected !== 'ninguna' ? ` • ${c.analysis.objectionDetected}` : "";
+            analysisBadge = `<div style="font-size: 0.7rem; color: #cbd5e1; margin-top: 3px;" title="${escapeHtml(c.analysis.summaryNote || '')}">${sentEmoji} ${score}${escapeHtml(objTxt)}</div>`;
+          }
+
+          return `
+            <tr>
+              <td>${escapeHtml(dateStr)}</td>
+              <td><strong>${safeCompany}</strong><br><div style="margin-top: 3px; display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">${variantTag}</div>${analysisBadge}</td>
+              <td><code>${phoneHtml}</code></td>
+              <td>${c.channel === 'browser' ? '🌐 Web' : '📞 Netelip'}</td>
+              <td>${Number(c.durationSeconds) || 0}s</td>
+              <td><span style="font-size:0.75rem; font-weight:700; color:var(--accent-cyan);">${escapeHtml(stageStr)}</span></td>
+              <td><span class="badge ${escapeHtml(badgeClass)}">${escapeHtml(c.status)}</span></td>
+              <td>${waBtn}</td>
+              <td>
+                <button class="btn btn-secondary btn-view-dialog" data-id="${safeId}" style="padding: 0.35rem 0.65rem; font-size: 0.75rem;">
+                  Ver Diálogo
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join("");
+      } catch (err) {
+        console.error("Error cargando historial:", err);
+      }
+    }
+
+    async function markSent(id) {
+      try {
+        await fetch(`/api/calls/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ whatsappSent: true }),
+        });
+        setTimeout(loadHistoryTable, 1000);
+      } catch {}
+    }
+  </script>
+</body>
+</html>
