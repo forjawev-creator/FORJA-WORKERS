@@ -77,7 +77,7 @@ class Recovery(unittest.TestCase):
             with self.assertRaises(Exception): backup.image_timeout(value)
 
     def test_image_identity_and_readable_layer(self):
-        p=self.root/'image.tar';config=b'{"architecture":"synthetic"}';image_id='sha256:'+hashlib.sha256(config).hexdigest()
+        p=self.root/'image.tar';config=json.dumps({'architecture':'amd64','os':'linux','rootfs':{'type':'layers','diff_ids':['sha256:'+hashlib.sha256(b'fake layer').hexdigest()]}}).encode();image_id='sha256:'+hashlib.sha256(config).hexdigest()
         entries={'config.json':config,'layer.tar':b'fake layer','manifest.json':json.dumps([{'Config':'config.json','Layers':['layer.tar']}]).encode()}
         with tarfile.open(p,'w') as out:
             for name,data in entries.items():

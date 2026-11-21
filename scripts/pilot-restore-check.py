@@ -21,11 +21,12 @@ def verify_and_restore(root):
         if path.is_symlink() or path.resolve().is_relative_to(root) is False: raise ValueError('Unsafe source')
         if backup.digest(path.read_bytes())!=item['sha256']: raise ValueError('Backup hash mismatch')
     image=manifest['image']
+    image_identity=None
     if image['included']:
         path=root/'image.tar'
         with path.open('rb') as f:
             if hashlib.file_digest(f,'sha256').hexdigest()!=image['sha256']: raise ValueError('Image hash mismatch')
-        backup.verify_image_archive(path,image['imageId'])
+        image_identity=backup.verify_image_archive(path,image['imageId'])
     dest=root/'restore-isolated'
     backup.private_dir(dest)
     sqlite_count=0
@@ -50,7 +51,7 @@ def verify_and_restore(root):
     (safe/'runtime-policy.json').write_text(json.dumps({'realCallsEnabled':False,'realWhatsAppEnabled':False}),encoding='utf-8')
     (safe/'config.json').write_text('{}',encoding='utf-8')
     report={'status':'offline_file_restore_verified','files':len(manifest['files']),'sqliteDatabases':sqlite_count,
-        'imageArchiveVerified':image['included'],'networkUsed':False,'applicationStarted':False,'realCallsEnabled':False,
+        'imageArchiveVerified':image['included'],'imageIdentityKind':image_identity['identityKind'] if image_identity else None,'networkUsed':False,'applicationStarted':False,'realCallsEnabled':False,
         'fullApplicationRestorationTested':False,'limitation':'Verified private restored files, JSON and SQLite integrity. Did not start application or validate SIP/provider recovery.'}
     (dest/'result.json').write_text(json.dumps(report,indent=2),encoding='utf-8')
     return report

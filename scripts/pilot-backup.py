@@ -3,6 +3,7 @@ import argparse
 import base64
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import io
 import json
 import os
@@ -83,19 +84,11 @@ print(json.dumps({'imageId':inspect['Image'],'containerId':inspect['Id'],'starte
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
-def verify_image_archive(path, image_id):
-    with tarfile.open(path,'r:') as archive:
-        manifests=json.load(archive.extractfile('manifest.json'))
-        configs=[digest(archive.extractfile(item['Config']).read()) for item in manifests]
-        if image_id.removeprefix('sha256:') not in configs:
-            raise ValueError('Image identity mismatch')
-        for item in manifests:
-            for layer in item['Layers']:
-                member=archive.getmember(layer)
-                read=0
-                with archive.extractfile(member) as stream:
-                    while chunk:=stream.read(1024*1024): read+=len(chunk)
-                if read!=member.size: raise ValueError('Truncated image layer')
+_verifier_spec = importlib.util.spec_from_file_location('image_archive_verifier', Path(__file__).with_name('image-archive-verifier.py'))
+_verifier_module = importlib.util.module_from_spec(_verifier_spec)
+_verifier_spec.loader.exec_module(_verifier_module)
+verify_image_archive = _verifier_module.verify_image_archive
+
 
 def private_dir(path):
     path.mkdir(parents=True, exist_ok=False)
@@ -179,9 +172,9 @@ def main():
             result=subprocess.run(ssh+['docker','image','save',image_id],stdout=f,stderr=subprocess.PIPE,timeout=args.image_timeout_seconds)
             f.flush();os.fsync(f.fileno())
         if result.returncode: raise RuntimeError('Image streaming failed; incomplete operation must not be used')
-        verify_image_archive(target,image_id)
+        identity=verify_image_archive(target,image_id)
         with target.open('rb') as f: sha=hashlib.file_digest(f,'sha256').hexdigest()
-        image={'included':True,'path':'image.tar','sha256':sha,'bytes':target.stat().st_size,'imageId':image_id,'restorationVerified':False}
+        image={'included':True,'path':'image.tar','sha256':sha,'bytes':target.stat().st_size,'imageId':image_id,'identity':identity,'restorationVerified':False}
     manifest.update(status='complete',files=records,image=image,
         consistency='Idle observed before/after; two matching data snapshots and same container/image/start. Not a filesystem freeze.',
         excludes=['host operating system','other services','provider account configuration','external provider records'],
