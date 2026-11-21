@@ -1,7 +1,7 @@
+import { BridgeSupervisor, type BridgeObservation } from "./bridge-supervisor.js";
 import { runtimePolicy, communicationsBlockedMessage } from "./runtime-policy.js";
 import { spawn, ChildProcess } from "child_process";
 import path from "path";
-import dgram from "dgram";
 import { getOrCreateVoiceControlSecret } from "./utils/secret-manager.js";
 
 let bridgeProcess: ChildProcess | null = null;
@@ -36,18 +36,49 @@ export function getBridgeStatus(): {
   };
 }
 
+const supervision = new BridgeSupervisor();
+let supervisorTimer: ReturnType<typeof setInterval> | undefined;
+let supervisorBusy = false;
+export async function fetchBridgeHealth(): Promise<BridgeObservation> {
+  const telemetry = await fetchBridgeTelemetry();
+  return supervision.observe({
+    processRunning: bridgeProcess !== null && !bridgeProcess.killed,
+    reachable: telemetry.reachable === true,
+    registered: telemetry.registered === true,
+    callActive: typeof telemetry.call_active === "boolean" ? telemetry.call_active : null,
+    error: telemetry.error,
+  });
+}
+export function startBridgeSupervisor() {
+  if (supervisorTimer) return;
+  supervisorTimer = setInterval(async () => {
+    if (supervisorBusy) return;
+    supervisorBusy = true;
+    try {
+      const state = await fetchBridgeHealth();
+      await supervision.recover(state, runtimePolicy().realCallsEnabled, Date.now(), startBridge);
+    } finally { supervisorBusy = false; }
+  }, 5000);
+  supervisorTimer.unref();
+}
 export async function fetchBridgeTelemetry(): Promise<Record<string, any>> {
+  const revision = supervision.revision;
   try {
     const secret = getOrCreateVoiceControlSecret();
     const res = await fetch("http://127.0.0.1:8086/api/v1/status", {
-      headers: { Authorization: `Bearer ${secret}` },
-      signal: AbortSignal.timeout(1500),
+      headers: { Authorization: `Bearer ${secret}` }, signal: AbortSignal.timeout(1500),
     });
-    if (res.ok) {
-      return ((await res.json()) as Record<string, any>) || {};
-    }
-  } catch {}
-  return {};
+    if (!res.ok) throw new Error(`Control del puente: HTTP ${res.status}`);
+    const value = await res.json() as Record<string, any>;
+    if (revision !== supervision.revision) throw new Error("Estado anterior a una orden de telefonía; se requiere nueva comprobación");
+    if (!value || typeof value.call_active !== "boolean" || typeof value.registered !== "boolean")
+      throw new Error("Respuesta de estado del puente inválida");
+    supervision.observe({ processRunning: bridgeProcess !== null && !bridgeProcess.killed,
+      reachable: true, registered: value.registered, callActive: value.call_active });
+    return { ...value, reachable: true };
+  } catch (error) {
+    return { reachable: false, registered: false, error: error instanceof Error ? error.message : "Fallo de comunicación con el puente" };
+  }
 }
 
 export function startBridge(): {
@@ -63,7 +94,7 @@ export function startBridge(): {
 
   try {
     const secret = getOrCreateVoiceControlSecret();
-    bridgeProcess = spawn("python", ["-u", scriptPath], {
+    bridgeProcess = spawn(process.env.PYTHON_BIN || "python", ["-u", scriptPath], {
       cwd: process.cwd(),
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -106,6 +137,9 @@ export function startBridge(): {
 }
 
 export function stopBridge(): { success: boolean; message: string } {
+  supervision.stop();
+  if (supervisorTimer) clearInterval(supervisorTimer);
+  supervisorTimer = undefined;
   if (!bridgeProcess || bridgeProcess.killed) {
     return { success: false, message: "La centralita no está en ejecución." };
   }
@@ -133,6 +167,7 @@ export async function sendHttpNetelipCommand(payload: {
 }): Promise<{ success: boolean; message: string; data?: any }> {
   if (payload.command !== "hangup" && !runtimePolicy().realCallsEnabled) return { success: false, message: communicationsBlockedMessage };
   const secret = getOrCreateVoiceControlSecret();
+  supervision.beginCommand();
   try {
     const res = await fetch("http://127.0.0.1:8086/api/v1/commands", {
       method: "POST",
@@ -155,39 +190,12 @@ export async function sendHttpNetelipCommand(payload: {
     } else {
       return { success: false, message: data.error || `Error HTTP ${res.status}` };
     }
-  } catch (httpErr: any) {
-    // Si la API HTTP no responde o está en arranque, recurrir al canal UDP como respaldo secundario
-    appendLog(`[HTTP Control Fallback UDP] ${httpErr.message}`);
-    return fallbackUdpCommand(payload);
+  } catch {
+    appendLog("Orden de telefonía sin confirmación; se bloquea el reintento automático.");
+    return { success: false, message: "Resultado incierto. Reconciliar con la centralita antes de reintentar." };
+  } finally {
+    supervision.endCommand();
   }
-}
-
-function fallbackUdpCommand(payload: any): Promise<{ success: boolean; message: string }> {
-  return new Promise((resolve) => {
-    let cmdStr = "";
-    if (payload.command === "dial") {
-      cmdStr = payload.call_id
-        ? `DIAL:${payload.phone}:${payload.company || "Cliente"}:${payload.call_id}`
-        : `DIAL:${payload.phone}:${payload.company || "Cliente"}`;
-    } else if (payload.command === "hangup") {
-      cmdStr = "HANGUP";
-    } else if (payload.command === "transfer") {
-      cmdStr = `TRANSFER:${payload.target_phone || payload.phone || ""}`;
-    }
-
-    const client = dgram.createSocket("udp4");
-    const msg = Buffer.from(cmdStr, "utf-8");
-    client.send(msg, 0, msg.length, 8085, "127.0.0.1", (err) => {
-      client.close();
-      if (err) {
-        appendLog(`Error UDP fallback: ${err.message}`);
-        resolve({ success: false, message: err.message });
-      } else {
-        appendLog(`Comando enviado por UDP fallback: ${cmdStr}`);
-        resolve({ success: true, message: "Comando enviado (UDP fallback)" });
-      }
-    });
-  });
 }
 
 export function sendNetelipCommand(command: string): Promise<boolean> {
@@ -237,7 +245,14 @@ export async function dialNetelip(
 }
 
 export async function hangupNetelip(): Promise<{ success: boolean; message: string }> {
-  return sendHttpNetelipCommand({ command: "hangup" });
+  const result = await sendHttpNetelipCommand({ command: "hangup" });
+  if (!result.success) return result;
+  for (let i = 0; i < 24; i++) {
+    const status = await fetchBridgeTelemetry();
+    if (status.call_active === false) return { success: true, message: "Colgado confirmado" };
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  return { success: false, message: "Colgado pendiente de confirmación; conservar la reserva de línea." };
 }
 
 export async function transferNetelip(targetPhone?: string): Promise<{ success: boolean; message: string }> {

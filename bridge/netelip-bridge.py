@@ -15,6 +15,9 @@ import threading
 import queue
 import collections
 import random
+import sqlite3
+import hmac
+import secrets
 import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -131,6 +134,17 @@ def calculate_digest(user, realm, password, method, uri, nonce, qop=None, nc="00
         return hashlib.md5(f"{ha1}:{nonce}:{nc}:{cnonce}:{qop}:{ha2}".encode("utf-8")).hexdigest()
     return hashlib.md5(f"{ha1}:{nonce}:{ha2}".encode("utf-8")).hexdigest()
 
+def sip_log_summary(first_line):
+    """Only allowlisted methods/status codes; never a URI, reason phrase or headers."""
+    status = re.match(r"^SIP/2\.0 ([1-6][0-9]{2})(?: |$)", first_line)
+    if status:
+        return "response " + status.group(1)
+    method = first_line.split(" ", 1)[0]
+    if method in {"INVITE", "ACK", "BYE", "CANCEL", "OPTIONS", "REGISTER", "REFER", "NOTIFY", "INFO", "UPDATE", "PRACK"}:
+        return "request " + method
+    return "unrecognized_message"
+
+
 class NetelipSipBridge:
     def __init__(self, config_path="data/config.json"):
         self.config_path = config_path
@@ -156,9 +170,28 @@ class NetelipSipBridge:
         self.running = False
         self.registered = False
         self.last_register_time = 0
+        self.register_expires_at = 0.0
+        self.register_transaction = None
+        self.register_error = "not_registered"
+        self.register_call_id = "reg-" + secrets.token_hex(16)
 
         # Estado de llamada actual
-        self.call_lock = threading.Lock()
+        self.call_lock = threading.RLock()
+        self.call_established = False
+        self.start_notified = False
+        self.call_ending = False
+        self.cancel_sent = False
+        self.invite_provisional = False
+        self.invite_cseq = 0
+        self.last_invite_request = ""
+        self.session_id = None
+        self.call_started_at = 0.0
+        self.terminal_reason = ""
+        self.last_control_packet = None
+        self.control_retry_at = 0.0
+        self.control_retry_count = 0
+        self.allowed_numbers = {x.strip().lstrip("+") for x in os.environ.get("CALL_ALLOWED_NUMBERS", "").split(",") if x.strip()}
+        self.pilot = os.environ.get("CALLS_PILOT") == "1"
         self.call_active = False
         self.call_id = None
         self.remote_tag = None
@@ -203,9 +236,84 @@ class NetelipSipBridge:
         self.control_secret = self.load_control_secret()
         self.seen_call_ids = set()
         self.rtp_packets_sent = 0
+        self.rtp_send_errors = 0
+        self.rtp_receive_errors = 0
+        self.rtp_totals = {"sent": 0, "received": 0, "send_errors": 0, "receive_errors": 0}
+        self.rtp_packets_received = 0
         self.rtp_jitter_samples = []
         self.buffer_underruns = 0
         self.buffer_overflows = 0
+
+    def calls_enabled(self):
+        try:
+            policy = os.path.join(os.path.dirname(os.path.abspath(self.config_path)), "runtime-policy.json")
+            with open(policy, encoding="utf-8") as f:
+                return json.load(f).get("realCallsEnabled") is True
+        except (OSError, ValueError, AttributeError):
+            return False
+
+    def require_calls_enabled(self):
+        if not self.calls_enabled():
+            raise RuntimeError("Telefonía real bloqueada por runtime-policy")
+
+    def registration_valid(self):
+        if self.registered and time.monotonic() >= self.register_expires_at:
+            self.registered = False
+            self.register_error = "expired"
+        return self.registered
+
+    def handle_register_response(self, msg):
+        cseq = re.search(r"^CSeq:\s*(\d+)\s+REGISTER\s*$", msg, re.I | re.M)
+        if not cseq:
+            return False
+        call_id = re.search(r"^Call-ID:\s*([^\r\n]+)", msg, re.I | re.M)
+        branch = re.search(r"^Via:.*?;branch=([^;\s]+)", msg, re.I | re.M)
+        pending = self.register_transaction
+        if not pending or not call_id or not branch:
+            return True
+        if (int(cseq.group(1)), call_id.group(1).strip(), branch.group(1)) != pending[:3]:
+            return True
+        code = re.match(r"SIP/2.0 (\d{3})", msg)
+        if not code:
+            return True
+        status = int(code.group(1))
+        if status in (401, 407):
+            self.registered = False
+            self.register_error = "authentication_required"
+            if pending[3]:
+                self.register_transaction = None
+                self.register_error = "authentication_rejected"
+                return True
+            match = re.search(r"(?:WWW|Proxy)-Authenticate:\s*Digest\s+([^\r\n]+)", msg, re.I)
+            if match:
+                params = parse_auth_header(match.group(1))
+                realm, nonce = params.get("realm", self.sip_domain), params.get("nonce", "")
+                if not nonce:
+                    return True
+                uri = "sip:" + self.sip_domain
+                response = calculate_digest(self.sip_user, realm, self.sip_pass, "REGISTER", uri, nonce)
+                header = "Proxy-Authorization" if status == 407 else "Authorization"
+                self.send_register(f'{header}: Digest username="{self.sip_user}", realm="{realm}", nonce="{nonce}", uri="{uri}", response="{response}", algorithm=MD5')
+            return True
+        if status >= 200:
+            self.register_transaction = None
+            if status == 200:
+                contact = re.search(r"^Contact:.*?;expires=(\d+)", msg, re.I | re.M)
+                expires = contact or re.search(r"^Expires:\s*(\d+)", msg, re.I | re.M)
+                seconds = min(60, int(expires.group(1))) if expires else 60
+                self.registered = seconds > 0
+                self.register_expires_at = time.monotonic() + seconds
+                self.last_register_time = time.time()
+                self.register_error = "" if self.registered else "expired"
+            else:
+                self.registered = False
+                self.register_expires_at = 0.0
+                self.register_error = "rejected_" + str(status)
+        return True
+
+    def reset_rtp_metrics(self):
+        self.rtp_packets_sent = self.rtp_packets_received = 0
+        self.rtp_send_errors = self.rtp_receive_errors = 0
 
     def load_control_secret(self):
         secret = os.environ.get("VOICE_CONTROL_SECRET", "").strip()
@@ -223,47 +331,109 @@ class NetelipSipBridge:
                 pass
         return ""
 
-    def is_call_id_seen(self, call_id):
-        if not call_id:
-            return False
-        if call_id in self.seen_call_ids:
-            return True
-        ledger_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "voice-control-ledger.json")
-        if os.path.exists(ledger_path):
-            try:
-                with open(ledger_path, "r", encoding="utf-8") as f:
-                    seen = json.load(f)
-                    if call_id in seen:
-                        self.seen_call_ids.add(call_id)
-                        return True
-            except:
-                pass
-        return False
+    def ledger(self):
+        directory = os.path.dirname(os.path.abspath(self.config_path))
+        os.makedirs(directory, exist_ok=True)
+        db = sqlite3.connect(os.path.join(directory, "voice-control.sqlite3"), timeout=5)
+        db.execute("PRAGMA synchronous=FULL")
+        db.execute("CREATE TABLE IF NOT EXISTS calls (id TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+        legacy = os.path.join(directory, "voice-control-ledger.json")
+        if os.path.exists(legacy):
+            with open(legacy, encoding="utf-8") as f:
+                entries = json.load(f)
+            if not isinstance(entries, list) or not all(isinstance(x, str) for x in entries):
+                db.close()
+                raise ValueError("Registro de llamadas anterior inválido")
+            db.executemany("INSERT OR IGNORE INTO calls VALUES (?, '')", [(x,) for x in entries])
+            db.commit()
+        return db
 
-    def record_call_id(self, call_id):
+    def is_call_id_seen(self, call_id):
+        with self.ledger() as db:
+            return db.execute("SELECT 1 FROM calls WHERE id=?", (call_id,)).fetchone() is not None
+
+    def record_call_id(self, call_id, payload=""):
         if not call_id:
+            raise ValueError("call_id requerido")
+        with self.ledger() as db:
+            db.execute("BEGIN IMMEDIATE")
+            previous = db.execute("SELECT payload FROM calls WHERE id=?", (call_id,)).fetchone()
+            if previous:
+                if previous[0] and payload and previous[0] != payload:
+                    raise ValueError("call_id reutilizado con datos distintos")
+                return False
+            db.execute("INSERT INTO calls VALUES (?, ?)", (call_id, payload))
+            return True
+
+    def validate_destination(self, phone):
+        if not isinstance(phone, str) or not re.fullmatch(r"\+?[1-9]\d{7,14}", phone):
+            raise ValueError("Número internacional inválido")
+        normalized = phone.lstrip("+")
+        if self.pilot and not self.allowed_numbers:
+            raise ValueError("Piloto sin destino permitido")
+        if self.allowed_numbers and normalized not in self.allowed_numbers:
+            raise ValueError("Destino no permitido para esta prueba")
+        return normalized
+
+    def reply_sip(self, status, msg, addr):
+        headers = [line for line in msg.split("\r\n") if line.lower().startswith(("via:", "from:", "to:", "call-id:", "cseq:"))]
+        self.send_sip("SIP/2.0 " + status + "\r\n" + "\r\n".join(headers) + "\r\nContent-Length: 0\r\n\r\n", addr)
+
+    def transaction_request(self, method, response=""):
+        # CANCEL and non-2xx ACK reuse the INVITE branch, CSeq and request URI.
+        lines = self.last_invite_request.split("\r\n")
+        target = f"sip:{self.callee_phone}@{self.sip_domain}"
+        if lines and lines[0].startswith("INVITE "):
+            target = lines[0].split(" ")[1]
+        keep = [x for x in lines[1:] if x.lower().startswith(("via:", "from:", "to:", "call-id:", "route:", "max-forwards:"))]
+        if not keep:
+            keep = [f"Via: SIP/2.0/UDP {self.local_ip}:{self.sip_port};branch=z9hG4bK-inv-{self.invite_cseq or self.cseq};rport",
+                    f"From: <sip:{self.sip_user}@{self.sip_domain}>;tag={self.local_tag}",
+                    f"To: <{target}>", f"Call-ID: {self.call_id}"]
+        if response and method == "ACK":
+            to = next((x for x in response.split("\r\n") if x.lower().startswith("to:")), None)
+            if to: keep = [to if x.lower().startswith("to:") else x for x in keep]
+        keep += [f"CSeq: {self.invite_cseq or self.cseq} {method}", "Content-Length: 0", "", ""]
+        return f"{method} {target} SIP/2.0\r\n" + "\r\n".join(keep)
+
+    def send_cancel(self):
+        if self.cancel_sent:
             return
-        self.seen_call_ids.add(call_id)
-        ledger_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "voice-control-ledger.json")
-        try:
-            os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
-            with open(ledger_path, "w", encoding="utf-8") as f:
-                json.dump(list(self.seen_call_ids), f, indent=2)
-        except:
-            pass
+        self.cancel_sent = True
+        self.send_control(self.transaction_request("CANCEL"))
+
+    def send_control(self, packet):
+        self.last_control_packet = packet
+        self.control_retry_count = 0
+        self.control_retry_at = time.monotonic() + 0.5
+        self.send_sip(packet)
+
+    def call_safety_loop(self):
+        while self.running:
+            with self.call_lock:
+                if self.call_active and self.call_started_at:
+                    limit = 120 if self.call_established else 35
+                    if not self.call_ending and time.monotonic() - self.call_started_at > limit:
+                        self.terminal_reason = "duration_limit" if self.call_established else "no_answer"
+                        self.hangup()
+                    if self.last_control_packet and self.control_retry_count < 6 and time.monotonic() >= self.control_retry_at:
+                        self.send_sip(self.last_control_packet)
+                        self.control_retry_count += 1
+                        self.control_retry_at = time.monotonic() + min(4, 0.5 * 2 ** self.control_retry_count)
+            time.sleep(0.25)
 
     def load_config(self):
         try:
             with open(self.config_path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-            self.sip_user = cfg.get("sipUser", "")
+            self.sip_user = cfg.get("sipUser", "2859181451")
             self.sip_pass = cfg.get("sipPassword", "")
             self.caller_id = cfg.get("sipCallerId", "")
             self.transfer_phone = cfg.get("humanTransferPhone", "")
-            print(f"[NetelipBridge] Configuración cargada: Usuario={self.sip_user}, CallerID={self.caller_id}, Transferencia={self.transfer_phone}")
+            print("[NetelipBridge] Configuración cargada")
         except Exception as e:
-            print(f"[NetelipBridge] Error leyendo {self.config_path}: {e}")
-            self.sip_user = ""
+            print(f"[NetelipBridge] Error leyendo configuración: {type(e).__name__}")
+            self.sip_user = "2859181451"
             self.sip_pass = ""
             self.caller_id = ""
             self.transfer_phone = ""
@@ -278,9 +448,14 @@ class NetelipSipBridge:
         except:
             self.local_ip = "127.0.0.1"
         if old_ip != self.local_ip:
-            print(f"[NetelipBridge] IP local detectada: {self.local_ip}")
+            print("[NetelipBridge] Dirección local detectada")
 
     def start(self):
+        self.require_calls_enabled()
+        if not self.control_secret:
+            raise RuntimeError("VOICE_CONTROL_SECRET requerido")
+        if self.pilot and not self.allowed_numbers:
+            raise RuntimeError("Piloto sin número autorizado")
         self.running = True
         self.determine_local_ip()
 
@@ -314,7 +489,7 @@ class NetelipSipBridge:
         threading.Thread(target=self.registration_maintainer, daemon=True).start()
         threading.Thread(target=self.rtp_receiver_loop, daemon=True).start()
         threading.Thread(target=self.rtp_sender_loop, daemon=True).start()
-        threading.Thread(target=self.udp_control_listener, daemon=True).start()
+        threading.Thread(target=self.call_safety_loop, daemon=True).start()
         threading.Thread(target=self.http_control_listener, daemon=True).start()
 
         # Conectar al Audio Bridge TCP (Node.js) e iniciar hilo único de recepción
@@ -334,10 +509,10 @@ class NetelipSipBridge:
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             sock.connect((self.tcp_host, self.tcp_port))
             self.tcp_sock = sock
-            print(f"[NetelipBridge] ✅ Conectado a Node.js Audio Bridge en {self.tcp_host}:{self.tcp_port}")
+            print("[NetelipBridge] Conectado al puente local de audio")
         except Exception as e:
             self.tcp_sock = None
-            print(f"[NetelipBridge] Aviso: No se pudo conectar a Node.js TCP en {self.tcp_host}:{self.tcp_port} ({e}). Reintentando en segundo plano...")
+            print(f"[NetelipBridge] Fallo de conexión al puente local: {type(e).__name__}; pendiente de reintento")
 
     def send_sip(self, msg_str, target_addr=None):
         if self.sip_sock:
@@ -345,10 +520,12 @@ class NetelipSipBridge:
                 dest = target_addr or (self.sip_server_ip, self.sip_server_port)
                 self.sip_sock.sendto(msg_str.encode("utf-8"), dest)
             except Exception as e:
-                print(f"[NetelipBridge] Error en send_sip: {e}")
+                print(f"[NetelipBridge] Error en send_sip: {type(e).__name__}")
 
     def send_register(self, auth_header=""):
+        self.require_calls_enabled()
         self.cseq += 1
+        self.register_transaction = (self.cseq, self.register_call_id, f"z9hG4bK-reg-{self.cseq}", bool(auth_header))
         contact_ip = self.public_ip or self.local_ip
         contact_port = self.public_sip_port or self.sip_port
         reg = (
@@ -357,7 +534,7 @@ class NetelipSipBridge:
             f"Max-Forwards: 70\r\n"
             f"From: <sip:{self.sip_user}@{self.sip_domain}>;tag=netelip-reg\r\n"
             f"To: <sip:{self.sip_user}@{self.sip_domain}>\r\n"
-            f"Call-ID: reg-{self.sip_user}-{int(time.time() // 60)}\r\n"
+            f"Call-ID: {self.register_call_id}\r\n"
             f"CSeq: {self.cseq} REGISTER\r\n"
             f"Contact: <sip:{self.sip_user}@{contact_ip}:{contact_port}>\r\n"
             f"Expires: 60\r\n"
@@ -370,6 +547,7 @@ class NetelipSipBridge:
     def registration_maintainer(self):
         while self.running:
             try:
+                self.registration_valid()
                 # Si hay una llamada en curso, NO enviar re-registro ni consultar IP
                 # para evitar interferir con las transacciones SIP y el flujo RTP
                 if self.call_active:
@@ -378,7 +556,7 @@ class NetelipSipBridge:
 
                 now = time.time()
                 # Re-registrar cada 20 segundos para mantener activo el mapeo NAT en el router
-                if not self.registered or (now - self.last_register_time > 20):
+                if not self.registration_valid() or (now - self.last_register_time > 20):
                     self.determine_local_ip()
                     self.send_register()
                 else:
@@ -389,7 +567,7 @@ class NetelipSipBridge:
                         except Exception:
                             pass
             except Exception as e:
-                print(f"[NetelipBridge] Error en registration_maintainer: {e}")
+                print(f"[NetelipBridge] Error en registration_maintainer: {type(e).__name__}")
             time.sleep(10)
 
     def sip_receiver_loop(self):
@@ -400,9 +578,15 @@ class NetelipSipBridge:
                 self.handle_sip_message(msg_str, addr)
             except Exception as e:
                 if self.running:
-                    print(f"[NetelipBridge] Error en sip_receiver_loop: {e}")
+                    print(f"[NetelipBridge] Error en sip_receiver_loop: {type(e).__name__}")
 
     def handle_sip_message(self, msg, addr):
+        if addr[0] != self.sip_server_ip:
+            return
+        with self.call_lock:
+            self._handle_sip_message(msg, addr)
+
+    def _handle_sip_message(self, msg, addr):
         lines = msg.split("\r\n")
         if not lines:
             return
@@ -410,7 +594,7 @@ class NetelipSipBridge:
 
         # Log de diagnóstico para mensajes SIP entrantes (excepto keepalives rutinarios de registro)
         if "REGISTER" not in msg and not first_line.startswith("ACK sip:"):
-            print(f"[NetelipBridge] SIP << {first_line}")
+            print(f"[NetelipBridge] SIP << {sip_log_summary(first_line)}")
 
         # Aprender mapeo NAT (IP pública y rport) de las respuestas de Netelip
         match_received = re.search(r"received=([0-9\.]+)", msg)
@@ -450,7 +634,7 @@ class NetelipSipBridge:
 
             # 2. Ringing / Progress para Leg 2 (Miguel está recibiendo la llamada)
             if "SIP/2.0 180 Ringing" in first_line or "SIP/2.0 183 Session Progress" in first_line:
-                print(f"[NetelipBridge] 📞 Leg 2 ({self.leg2_target_phone}): Teléfono sonando...")
+                print("[NetelipBridge] Leg 2: sonando")
                 if not self.ringback_active and not self.is_bridged:
                     self.ringback_active = True
                     threading.Thread(target=self.ringback_sender_loop, daemon=True).start()
@@ -458,14 +642,14 @@ class NetelipSipBridge:
 
             # 3. 200 OK para Leg 2 (Miguel ha descolgado)
             if "SIP/2.0 200 OK" in first_line and "INVITE" in msg:
-                print(f"[NetelipBridge] 🟢 TRANSFERENCIA CONECTADA: {self.leg2_target_phone} ha descolgado. Enlazando audio B2BUA.")
+                print("[NetelipBridge] Transferencia conectada; enlazando audio B2BUA")
                 self.ringback_active = False
                 match_ip = re.search(r"c=IN IP4 ([0-9\.]+)", msg)
                 match_port = re.search(r"m=audio (\d+) RTP", msg)
                 if match_ip and match_port:
                     self.leg2_remote_rtp_ip = match_ip.group(1)
                     self.leg2_remote_rtp_port = int(match_port.group(1))
-                    print(f"[NetelipBridge] RTP Leg 2 remoto fijado: {self.leg2_remote_rtp_ip}:{self.leg2_remote_rtp_port}")
+                    print("[NetelipBridge] Destino RTP de Leg 2 establecido")
 
                 match_to = re.search(r"To:.*tag=([a-zA-Z0-9_\-]+)", msg, re.I)
                 if match_to:
@@ -477,42 +661,49 @@ class NetelipSipBridge:
 
             # 4. Errores o rechazo en Leg 2 (486 Busy, 487 Cancelled, 408 Timeout, etc.)
             if first_line.startswith("SIP/2.0 4") or first_line.startswith("SIP/2.0 5") or first_line.startswith("SIP/2.0 6"):
-                print(f"[NetelipBridge] ⚠️ Leg 2 no disponible ({first_line}). Finalizando intento de enlace.")
+                print(f"[NetelipBridge] Leg 2 no disponible: {sip_log_summary(first_line)}; finalizando enlace")
                 self.ringback_active = False
                 self.reset_leg2()
                 return
 
             # 5. BYE de Leg 2 (Miguel cuelga)
             if first_line.startswith("BYE sip:"):
-                print(f"[NetelipBridge] 📴 Leg 2 ({self.leg2_target_phone}) ha colgado.")
+                print("[NetelipBridge] Leg 2: colgado recibido")
                 self.send_sip("SIP/2.0 200 OK\r\nContent-Length: 0\r\n\r\n", addr)
                 self.reset_leg2()
                 self.hangup()
                 return
 
-        # 1. Respuestas a REGISTER
-        if "REGISTER" in msg and "SIP/2.0 401" in first_line:
-            match = re.search(r"WWW-Authenticate:\s*Digest\s+(.*)", msg, re.I)
-            if match:
-                params = parse_auth_header(match.group(1))
-                realm = params.get("realm", self.sip_domain)
-                nonce = params.get("nonce", "")
-                uri = f"sip:{self.sip_domain}"
-                response = calculate_digest(self.sip_user, realm, self.sip_pass, "REGISTER", uri, nonce)
-                auth = (
-                    f'Authorization: Digest username="{self.sip_user}", realm="{realm}", '
-                    f'nonce="{nonce}", uri="{uri}", response="{response}", algorithm=MD5'
-                )
-                self.send_register(auth)
+        if self.handle_register_response(msg):
             return
 
-        if "SIP/2.0 200 OK" in first_line and "REGISTER" in msg:
-            if not self.registered:
-                print(f"[NetelipBridge] 🟢 Registrado correctamente en Netelip SIP ({self.sip_user}@{self.sip_domain}) | NAT: {self.public_ip}:{self.public_sip_port}")
-            self.registered = True
-            self.last_register_time = time.time()
-            if first_time_nat:
-                self.send_register()
+        cseq_match = re.search(r"CSeq:\s*(\d+)\s+([A-Z]+)", msg, re.I)
+        method = cseq_match.group(2).upper() if cseq_match else ""
+        is_request = not first_line.startswith("SIP/2.0")
+        if first_line.startswith("INVITE sip:"):
+            if not self.calls_enabled() or self.pilot or (self.call_active and msg_call_id != self.call_id):
+                self.reply_sip("486 Busy Here", msg, addr)
+                return
+        elif not self.call_active or not msg_call_id or msg_call_id != self.call_id:
+            if is_request and not first_line.startswith("ACK "):
+                self.reply_sip("481 Call/Transaction Does Not Exist", msg, addr)
+            return
+        if not is_request and method == "INVITE" and self.invite_cseq and int(cseq_match.group(1)) != self.invite_cseq:
+            return
+        if is_request and method in ("BYE", "CANCEL"):
+            from_tag = re.search(r"From:.*?;tag=([^;\s]+)", msg, re.I)
+            to_tag = re.search(r"To:.*?;tag=([^;\s]+)", msg, re.I)
+            if ((self.remote_tag and (not from_tag or from_tag.group(1) != self.remote_tag))
+                    or (self.local_tag and to_tag and to_tag.group(1) != self.local_tag)):
+                self.reply_sip("481 Call/Transaction Does Not Exist", msg, addr)
+                return
+        if method == "BYE" and first_line.startswith("SIP/2.0 200") and self.call_ending and int(cseq_match.group(1)) == self.cseq:
+            self.reset_call()
+            return
+        if method == "INVITE" and re.match(r"SIP/2.0 [3-6]\d\d", first_line) and not re.match(r"SIP/2.0 (401|407)\b", first_line):
+            self.send_sip(self.transaction_request("ACK", msg))
+            self.terminal_reason = first_line.split(" ", 2)[1]
+            self.reset_call()
             return
 
         # 2. Respuestas a INVITE o REFER saliente (401 / 407 Digest Challenge)
@@ -527,6 +718,10 @@ class NetelipSipBridge:
                 auth_header_name = "Proxy-Authenticate" if "Proxy-Authenticate" in msg else "WWW-Authenticate"
                 match = re.search(rf"{auth_header_name}:\s*Digest\s+(.*)", msg, re.I)
                 if match:
+                    self.send_sip(self.transaction_request("ACK", msg))
+                    if self.call_ending:
+                        self.reset_call()
+                        return
                     params = parse_auth_header(match.group(1))
                     realm = params.get("realm", self.sip_domain)
                     nonce = params.get("nonce", "")
@@ -543,6 +738,9 @@ class NetelipSipBridge:
 
         if "SIP/2.0 180 Ringing" in first_line or "SIP/2.0 183 Session Progress" in first_line:
             print(f"[NetelipBridge] 📞 Llamada saliente: Sonando / Progreso de sesión...")
+            self.invite_provisional = True
+            if self.call_ending:
+                self.send_cancel()
             # Extraer SDP si viene en 183
             self.extract_remote_sdp(msg)
             return
@@ -557,7 +755,15 @@ class NetelipSipBridge:
 
             # Enviar ACK
             self.send_ack()
-            self.notify_node_call_start()
+            was_established = self.call_established
+            self.call_established = True
+            if self.call_ending:
+                if not was_established:
+                    self.send_bye()
+            elif not self.start_notified:
+                self.last_control_packet = None
+                self.start_notified = True
+                self.notify_node_call_start()
             return
 
         # Respuestas de transferencia REFER
@@ -600,7 +806,7 @@ class NetelipSipBridge:
         if match_ip and match_port:
             self.remote_rtp_ip = match_ip.group(1)
             self.remote_rtp_port = int(match_port.group(1))
-            print(f"[NetelipBridge] Punto RTP remoto fijado: {self.remote_rtp_ip}:{self.remote_rtp_port}")
+            print("[NetelipBridge] Destino RTP establecido")
 
     def build_sdp(self):
         contact_ip = self.public_ip or self.local_ip
@@ -646,7 +852,7 @@ class NetelipSipBridge:
 
             # Si ya tenemos esta llamada activa (retransmisión de INVITE de Netelip sobre UDP):
             if self.call_active and self.call_id == call_id:
-                print(f"[NetelipBridge] 🔁 Retransmisión de INVITE detectada (Call-ID: {call_id}). Reenviando 200 OK...")
+                print("[NetelipBridge] Retransmisión INVITE; reenviando 200 OK")
                 if hasattr(self, 'last_200_ok') and self.last_200_ok:
                     self.send_sip(self.last_200_ok, addr)
                 return
@@ -668,7 +874,7 @@ class NetelipSipBridge:
                 self.remote_contact_uri = None
             self.extract_remote_sdp(msg)
 
-            print(f"[NetelipBridge] 📲 Llamante detectado: {self.caller_phone} | Call-ID: {self.call_id}")
+            print("[NetelipBridge] Llamada entrante identificada")
 
             # Construir To para la respuesta: si ya tiene tag se deja, si no se le añade nuestro local_tag
             resp_to = to_line
@@ -746,9 +952,13 @@ class NetelipSipBridge:
 
             try:
                 self.rtp_sock.sendto(bytes(rtp_hdr) + payload, (self.remote_rtp_ip, self.remote_rtp_port))
+                self.rtp_packets_sent += 1
+                self.rtp_totals["sent"] += 1
                 self.last_actual_rtp_send_time = time.perf_counter()
                 return True
             except Exception as e:
+                self.rtp_send_errors += 1
+                self.rtp_totals["send_errors"] += 1
                 self.last_actual_rtp_send_time = time.perf_counter()
                 return False
 
@@ -759,7 +969,21 @@ class NetelipSipBridge:
             self.send_rtp_frame(silence_payload)
 
     def dial(self, phone, company="Cliente", session_id=None):
+        self.require_calls_enabled()
+        phone = self.validate_destination(phone)
         with self.call_lock:
+            if self.call_active:
+                raise RuntimeError("Línea ocupada")
+            self.call_established = False
+            self.start_notified = False
+            self.call_ending = False
+            self.cancel_sent = False
+            self.invite_provisional = False
+            self.last_control_packet = None
+            self.session_id = session_id
+            self.reset_rtp_metrics()
+            self.call_started_at = time.monotonic()
+            self.terminal_reason = ""
             self.load_config()
             with self.outbound_audio_lock:
                 self.turn_segments.clear()
@@ -767,7 +991,9 @@ class NetelipSipBridge:
                 self.flushed_turn_ids.clear()
                 self.last_actual_rtp_send_time = 0.0
             self.pending_session_id = session_id
-            self.callee_phone = phone.replace("+", "").replace(" ", "")
+            # Netelip SIP uses 00 + country code for international dialing.
+            # Validate the canonical destination first; format only at this boundary.
+            self.callee_phone = "00" + phone
             self.call_direction = "outbound"
             self.call_active = True
             self.call_id = f"outbound-{int(time.time())}-{random.randint(100, 999)}"
@@ -791,7 +1017,9 @@ class NetelipSipBridge:
                 f"Content-Length: {len(sdp)}\r\n\r\n"
                 + sdp
             )
-            print(f"[NetelipBridge] 🚀 Marcando a {self.callee_phone} ({company}) vía Netelip...")
+            print("[NetelipBridge] Marcado solicitado al operador")
+            self.last_invite_request = invite
+            self.invite_cseq = self.cseq
             self.send_sip(invite)
 
     def send_invite_authenticated(self, auth_header):
@@ -813,6 +1041,8 @@ class NetelipSipBridge:
             f"Content-Length: {len(sdp)}\r\n\r\n"
             + sdp
         )
+        self.last_invite_request = invite
+        self.invite_cseq = self.cseq
         self.send_sip(invite)
 
     def send_ack(self):
@@ -863,6 +1093,8 @@ class NetelipSipBridge:
 
             try:
                 self.rtp_sock.sendto(bytes(rtp_hdr) + payload, (self.remote_rtp_ip, self.remote_rtp_port))
+                self.rtp_packets_sent += 1
+                self.rtp_totals["sent"] += 1
             except Exception:
                 pass
             time.sleep(0.020)
@@ -888,9 +1120,12 @@ class NetelipSipBridge:
                     pass
 
     def transfer_call(self, target_phone=None):
+        self.require_calls_enabled()
+        if self.pilot:
+            raise RuntimeError("Transferencias deshabilitadas en el piloto")
         target = target_phone or self.transfer_phone or ""
         clean_target = target.replace("+", "").replace(" ", "")
-        print(f"[NetelipBridge] 🔀 INICIANDO TRANSFERENCIA DIRECTA B2BUA a {clean_target}...")
+        print("[NetelipBridge] Iniciando transferencia B2BUA")
 
         if not self.call_active:
             print("[NetelipBridge] No hay llamada activa para transferir.")
@@ -950,7 +1185,7 @@ class NetelipSipBridge:
                 f"Content-Length: {len(sdp)}\r\n\r\n"
                 + sdp
             )
-            print(f"[NetelipBridge] 🚀 Marcando a {self.leg2_target_phone} (Leg 2 B2BUA)...")
+            print("[NetelipBridge] Marcado de Leg 2 solicitado")
             self.send_sip(invite)
 
     def send_leg2_invite_authenticated(self, auth_header):
@@ -1021,7 +1256,7 @@ class NetelipSipBridge:
             f"Content-Length: 0\r\n\r\n"
         )
         self.send_sip(bye)
-        print(f"[NetelipBridge] BYE enviado a Leg 2 ({self.leg2_target_phone}).")
+        print("[NetelipBridge] BYE enviado a Leg 2")
 
     def reset_leg2(self):
         self.leg2_active = False
@@ -1042,32 +1277,30 @@ class NetelipSipBridge:
         with self.call_lock:
             if not self.call_active or not self.call_id:
                 return
+            if self.call_ending:
+                return
+            self.call_ending = True
+            if self.call_established or self.call_direction == "inbound":
+                self.send_bye()
+            elif self.invite_provisional:
+                self.send_cancel()
+            # Before a provisional response, wait for it before CANCEL.
+            # Keep the line reserved until the final response arrives.
 
-            if self.leg2_active:
-                try:
-                    self.send_leg2_bye()
-                except Exception:
-                    pass
-                self.reset_leg2()
-
-            remote_num = self.caller_phone if self.call_direction == "inbound" else self.callee_phone
-            to_str = f"<sip:{remote_num}@{self.sip_domain}>"
-            if self.remote_tag:
-                to_str += f";tag={self.remote_tag}"
-
-            self.cseq += 1
-            bye = (
-                f"BYE sip:{remote_num}@{self.sip_domain} SIP/2.0\r\n"
-                f"Via: SIP/2.0/UDP {self.local_ip}:{self.sip_port};branch=z9hG4bK-bye-{self.cseq};rport\r\n"
-                f"Max-Forwards: 70\r\n"
-                f"From: <sip:{self.sip_user}@{self.sip_domain}>;tag={self.local_tag}\r\n"
-                f"To: {to_str}\r\n"
-                f"Call-ID: {self.call_id}\r\n"
-                f"CSeq: {self.cseq} BYE\r\n"
-                f"Content-Length: 0\r\n\r\n"
-            )
-            self.send_sip(bye)
-            self.reset_call()
+    def send_bye(self):
+        remote_num = self.caller_phone if self.call_direction == "inbound" else self.callee_phone
+        to_str = f"<sip:{remote_num}@{self.sip_domain}>"
+        if self.remote_tag: to_str += f";tag={self.remote_tag}"
+        self.cseq += 1
+        bye = (
+            f"BYE sip:{remote_num}@{self.sip_domain} SIP/2.0\r\n"
+            f"Via: SIP/2.0/UDP {self.local_ip}:{self.sip_port};branch=z9hG4bK-bye-{self.cseq};rport\r\n"
+            f"Max-Forwards: 70\r\n"
+            f"From: <sip:{self.sip_user}@{self.sip_domain}>;tag={self.local_tag}\r\n"
+            f"To: {to_str}\r\nCall-ID: {self.call_id}\r\n"
+            f"CSeq: {self.cseq} BYE\r\nContent-Length: 0\r\n\r\n"
+        )
+        self.send_control(bye)
 
     def handle_remote_bye(self, msg, addr):
         with self.call_lock:
@@ -1132,7 +1365,19 @@ class NetelipSipBridge:
         self.reset_call()
 
     def reset_call(self):
+        if not self.call_active:
+            return
+        self.notify_node_call_end()
         self.call_active = False
+        self.call_established = False
+        self.start_notified = False
+        self.call_ending = False
+        self.invite_cseq = 0
+        self.last_invite_request = ""
+        self.last_control_packet = None
+        self.session_id = None
+        self.pending_session_id = None
+        self.call_started_at = 0.0
         self.call_id = None
         self.remote_tag = None
         self.local_tag = None
@@ -1148,7 +1393,6 @@ class NetelipSipBridge:
             self.active_segment = None
             self.flushed_turn_ids.clear()
             self.last_actual_rtp_send_time = 0.0
-        self.notify_node_call_end()
 
     def send_tcp(self, pkt):
         """Envía un paquete a Node.js de forma segura entre hilos (evita intercalar bytes)."""
@@ -1169,7 +1413,8 @@ class NetelipSipBridge:
             self.connect_tcp_bridge()
         if self.tcp_sock:
             try:
-                session_id = self.pending_session_id or f"netelip_{int(time.time())}"
+                session_id = self.session_id or self.pending_session_id or f"netelip_{int(time.time())}"
+                self.session_id = session_id
                 self.pending_session_id = None
                 payload = json.dumps({
                     "sessionId": session_id,
@@ -1179,14 +1424,15 @@ class NetelipSipBridge:
                     "codec": "pcma"
                 }).encode("utf-8")
                 self.send_tcp(encode_packet(PACKET_CALL_START, 0, payload))
-                print(f"[NetelipBridge] -> Notificado PACKET_CALL_START a Node.js ({self.call_direction}, sessionId={session_id}, codec=pcma)")
+                print("[NetelipBridge] CALL_START notificado al motor local; codec=pcma")
             except Exception as e:
-                print(f"[NetelipBridge] Error notificando CALL_START a Node.js: {e}")
+                print(f"[NetelipBridge] Error notificando CALL_START a Node.js: {type(e).__name__}")
 
     def notify_node_call_end(self):
         if self.tcp_sock:
             try:
-                self.send_tcp(encode_packet(PACKET_CALL_END, 0))
+                payload = json.dumps({"sessionId": self.session_id or self.pending_session_id, "reason": self.terminal_reason or "hangup"}).encode()
+                self.send_tcp(encode_packet(PACKET_CALL_END, 0, payload))
                 print(f"[NetelipBridge] -> Notificado PACKET_CALL_END a Node.js")
             except Exception as e:
                 pass
@@ -1204,6 +1450,10 @@ class NetelipSipBridge:
                 # Solo aceptamos PCMA (PT 8); descartamos DTMF (telephone-event), RTCP y ruido de confort
                 if (data[1] & 0x7F) != 8:
                     continue
+                if self.remote_rtp_ip and addr[0] != self.remote_rtp_ip:
+                    continue
+                self.rtp_packets_received += 1
+                self.rtp_totals["received"] += 1
 
                 # Aprender el socket RTP real del operador ÚNICAMENTE a partir de tramas PCMA legítimas
                 # (Evita que paquetes RTCP en puertos impares desvíen el flujo de audio saliente)
@@ -1238,7 +1488,8 @@ class NetelipSipBridge:
 
             except Exception as e:
                 if self.running and self.call_active:
-                    pass
+                    self.rtp_receive_errors += 1
+                    self.rtp_totals["receive_errors"] += 1
 
     def rtp_sender_loop(self):
         """Envía a Netelip el A-law 8kHz nativo de OpenAI con cadencia de 20ms, baja latencia y gestión estricta por turnos"""
@@ -1462,6 +1713,7 @@ class NetelipSipBridge:
                     self.connect_tcp_bridge()
 
     def udp_control_listener(self):
+        raise RuntimeError("Control UDP deshabilitado; use HTTP autenticado")
         """Escucha comandos desde el servidor Web / CRM en UDP 8085 con protección SO_REUSEADDR"""
         udp_sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         try:
@@ -1488,7 +1740,7 @@ class NetelipSipBridge:
                 elif cmd_str == "STATUS":
                     print(f"[NetelipBridge Status] Registrado: {self.registered}, Llamada Activa: {self.call_active}")
         except Exception as e:
-            print(f"[NetelipBridge] Error en control UDP: {e}")
+            print(f"[NetelipBridge] Error en control UDP: {type(e).__name__}")
         finally:
             udp_sock.close()
 
@@ -1511,9 +1763,9 @@ class NetelipSipBridge:
             def _check_auth(self):
                 secret = bridge_inst.control_secret
                 if not secret:
-                    return True
+                    return False
                 auth_header = self.headers.get("Authorization", "").strip()
-                return auth_header == f"Bearer {secret}"
+                return hmac.compare_digest(auth_header, f"Bearer {secret}")
 
             def do_OPTIONS(self):
                 self.send_response(204)
@@ -1527,10 +1779,21 @@ class NetelipSipBridge:
                     if not self._check_auth():
                         return self._send_json(401, {"error": "Unauthorized"})
                     data = {
-                        "registered": bridge_inst.registered,
+                        "registered": bridge_inst.registration_valid(),
+                        "registration_error": bridge_inst.register_error,
+                        "registration_ttl_seconds": max(0, int(bridge_inst.register_expires_at - time.monotonic())),
                         "call_active": bridge_inst.call_active,
+                        "call_ending": bridge_inst.call_ending,
+                        "established": bridge_inst.call_established,
+                        "last_result": bridge_inst.terminal_reason,
+                        "session_id": bridge_inst.session_id,
+                        "pilot": bridge_inst.pilot,
                         "current_phone": bridge_inst.callee_phone or bridge_inst.caller_phone or "",
                         "rtp_packets_sent": getattr(bridge_inst, "rtp_packets_sent", 0),
+                        "rtp_packets_received": bridge_inst.rtp_packets_received,
+                        "rtp_send_errors": bridge_inst.rtp_send_errors,
+                        "rtp_receive_errors": bridge_inst.rtp_receive_errors,
+                        "rtp_totals": dict(bridge_inst.rtp_totals),
                         "rtp_jitter_mean_ms": round(sum(bridge_inst.rtp_jitter_samples[-50:]) / max(1, len(bridge_inst.rtp_jitter_samples[-50:])), 2) if getattr(bridge_inst, "rtp_jitter_samples", None) else 0.0,
                         "buffer_underruns": getattr(bridge_inst, "buffer_underruns", 0),
                         "buffer_overflows": getattr(bridge_inst, "buffer_overflows", 0)
@@ -1544,8 +1807,12 @@ class NetelipSipBridge:
                         return self._send_json(401, {"error": "Unauthorized"})
                     try:
                         content_len = int(self.headers.get("Content-Length", 0))
+                        if content_len < 1 or content_len > 16384:
+                            raise ValueError("Tamaño de solicitud inválido")
                         raw_body = self.rfile.read(content_len).decode("utf-8")
                         req = json.loads(raw_body)
+                        if not isinstance(req, dict) or any(not isinstance(req.get(k, ""), str) for k in ("command", "call_id", "phone", "company", "target_phone")):
+                            raise ValueError("Formato de orden inválido")
                     except Exception as e:
                         return self._send_json(400, {"error": f"JSON inválido: {e}"})
 
@@ -1555,27 +1822,31 @@ class NetelipSipBridge:
                     company = req.get("company", "Cliente").strip()
 
                     if cmd == "dial":
-                        if not phone:
-                            return self._send_json(400, {"error": "Teléfono requerido"})
-                        if call_id and bridge_inst.is_call_id_seen(call_id):
-                            print(f"[NetelipBridge HTTP] ⏭️ Orden dial duplicada ignorada por idempotencia ({call_id})")
-                            return self._send_json(200, {"status": "duplicate_ignored", "call_id": call_id, "idempotent_replay": True})
-                        if not bridge_inst.registered:
-                            return self._send_json(503, {"status": "rejected_not_registered", "error": "Centralita Netelip no registrada"})
-                        if bridge_inst.call_active:
-                            return self._send_json(409, {"status": "rejected_busy", "error": "Centralita ocupada en otra llamada"})
-
-                        if call_id:
-                            bridge_inst.record_call_id(call_id)
-                        bridge_inst.dial(phone, company, call_id)
-                        op_id = f"op_{int(time.time() * 1000)}"
-                        return self._send_json(202, {"status": "accepted", "call_id": call_id, "operation_id": op_id})
+                        try:
+                            phone = bridge_inst.validate_destination(phone)
+                            if not re.fullmatch(r"[a-zA-Z0-9_-]{1,160}", call_id):
+                                raise ValueError("call_id válido requerido")
+                            with bridge_inst.call_lock:
+                                if not bridge_inst.registration_valid():
+                                    return self._send_json(503, {"status": "rejected_not_registered"})
+                                if bridge_inst.call_active:
+                                    return self._send_json(409, {"status": "rejected_busy"})
+                                if not bridge_inst.record_call_id(call_id, json.dumps([phone, company], ensure_ascii=True)):
+                                    return self._send_json(200, {"status": "duplicate_ignored", "idempotent_replay": True})
+                                bridge_inst.dial(phone, company, call_id)
+                            return self._send_json(202, {"status": "accepted", "call_id": call_id})
+                        except ValueError as e:
+                            return self._send_json(400, {"error": str(e)})
+                        except Exception:
+                            return self._send_json(503, {"error": "No se pudo reservar o ejecutar la llamada. No se reintentará automáticamente."})
 
                     elif cmd == "hangup":
                         bridge_inst.hangup()
                         return self._send_json(200, {"status": "hangup_requested"})
 
                     elif cmd == "transfer":
+                        if bridge_inst.pilot:
+                            return self._send_json(403, {"error": "Transferencias deshabilitadas en el piloto"})
                         target = req.get("target_phone") or req.get("phone") or bridge_inst.transfer_phone
                         bridge_inst.transfer_call(target)
                         return self._send_json(202, {"status": "transfer_initiated", "target_phone": target})
@@ -1590,7 +1861,7 @@ class NetelipSipBridge:
             print("[NetelipBridge] 🌐 API HTTP de Control escuchando en http://127.0.0.1:8086")
             httpd.serve_forever()
         except Exception as e:
-            print(f"[NetelipBridge] Error en servidor HTTP de control: {e}")
+            print(f"[NetelipBridge] Error en servidor HTTP de control: {type(e).__name__}")
 
 if __name__ == "__main__":
     bridge = NetelipSipBridge()

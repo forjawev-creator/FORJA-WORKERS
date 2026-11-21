@@ -47,7 +47,7 @@ export function startVoiceBridge(options: VoiceServerOptions = {}): { server: ne
   const tcpHost = options.host || process.env.AUDIO_TCP_HOST || "127.0.0.1";
   const sampleRate = options.sampleRate || parseInt(process.env.AUDIO_SAMPLE_RATE || "16000", 10);
 
-  const server = net.createServer(async (socket) => {
+  const server = net.createServer((socket) => {
     if (!runtimePolicy().realCallsEnabled) { socket.destroy(); return; }
     const remoteAddress = `${socket.remoteAddress}:${socket.remotePort}`;
     console.log(`\n[Bridge] Conexión TCP de audio establecida desde ${remoteAddress}`);
@@ -56,6 +56,9 @@ export function startVoiceBridge(options: VoiceServerOptions = {}): { server: ne
     let activeOutboundCallId: string | null = null;
     let activeOutboundLead: any = null;
     let callStartTime = 0;
+    let completionSaved = false;
+    let endNotified = false;
+    let connectionClosed = false;
     let currentCallPhone = "";
     let currentCallCompany = "";
 
@@ -73,6 +76,49 @@ export function startVoiceBridge(options: VoiceServerOptions = {}): { server: ne
 
     socket.setNoDelay(true);
     let audioCodec: "pcm16" | "pcma" = "pcm16";
+
+    function reportError(error: unknown, prefix = "Fallo de voz") {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[Voice] ${prefix}: ${message}`);
+      appEvents.broadcast({ type: "provider_error", sessionId: currentSessionId, error: `${prefix}: ${message}` });
+    }
+
+    function finishCall(reason: string): boolean {
+      if (!callStartTime) return true;
+      const summary = engine?.getCallSessionSummary?.();
+      if (!completionSaved && !currentSessionId.startsWith("browser_")) {
+        try {
+          outboxProducer.emitCallCompleted({
+            sessionId: currentSessionId, channel: "telephony", company: currentCallCompany,
+            phone: currentCallPhone, durationSeconds: Math.max(1, Math.round((Date.now() - callStartTime) / 1000)),
+            status: summary?.outcomeStatus || "TERMINADO",
+            whatsappAuthorized: Boolean(summary?.whatsappAuthorized),
+            phoneConfirmed: Boolean(summary?.phoneConfirmed),
+            confirmedPhone: summary?.confirmedPhone || currentCallPhone,
+            evidenceQuote: summary?.evidenceQuote, transcript: summary?.transcripts || [],
+            scriptVariant: summary?.scriptVariant,
+          });
+          completionSaved = true;
+        } catch (error) {
+          reportError(error, "No se pudo guardar el resultado");
+          return false;
+        }
+      }
+      if (!endNotified) {
+        endNotified = true;
+        appEvents.broadcast({ type: "call_end", sessionId: currentSessionId,
+          outcome: summary?.outcomeStatus || "TERMINADO", sessionSummary: summary, reason,
+          whatsappAuthorized: summary?.whatsappAuthorized, evidenceQuote: summary?.evidenceQuote,
+          confirmedPhone: summary?.confirmedPhone });
+        appEvents.broadcast({ type: "state", state: "idle", sessionId: currentSessionId });
+      }
+      return true;
+    }
+
+    async function stopEngine(reason: string) {
+      try { await engine?.stop(reason); }
+      catch (error) { reportError(error, "No se pudo cerrar el motor de voz"); }
+    }
 
     function buildAgentConfig(): AgentConfig {
       const savedCfg = loadConfig();
@@ -196,22 +242,13 @@ export function startVoiceBridge(options: VoiceServerOptions = {}): { server: ne
           socket.write(encodePacket(PACKET_CALL_END, 0));
         }
         isCallActive = false;
-        const sessionSummary = engine?.getCallSessionSummary ? engine.getCallSessionSummary() : undefined;
-        appEvents.broadcast({
-          type: "call_end",
-          sessionId: currentSessionId,
-          outcome: outcome || sessionSummary?.outcomeStatus,
-          sessionSummary,
-          whatsappAuthorized: sessionSummary?.whatsappAuthorized,
-          evidenceQuote: sessionSummary?.evidenceQuote,
-          confirmedPhone: sessionSummary?.confirmedPhone,
-        });
-        appEvents.broadcast({ type: "state", state: "idle", sessionId: currentSessionId });
-        engine?.stop(reason).catch((e) => console.error("[Engine Stop Error]:", e));
+        finishCall(reason);
+        void stopEngine(reason);
+
       },
     };
 
-    socket.on("data", async (chunk: Buffer) => {
+    async function processChunk(chunk: Buffer) {
       const packets = framer.push(chunk);
 
       for (const packet of packets) {
@@ -225,6 +262,10 @@ export function startVoiceBridge(options: VoiceServerOptions = {}): { server: ne
         } else if (packet.type === PACKET_PLAYBACK_DRAINED) {
           engine?.handlePlaybackDrained(packet.turnId);
         } else if (packet.type === PACKET_CALL_START) {
+          if (isCallActive || callStartTime || connectionClosed) continue;
+          if (!runtimePolicy().realCallsEnabled) { socket.destroy(); return; }
+          completionSaved = false;
+          endNotified = false;
           let parsedCompany: string | undefined = undefined;
           let parsedPhone: string | undefined = undefined;
           let parsedDirection: "outbound" | "inbound" = "outbound";
@@ -288,124 +329,94 @@ export function startVoiceBridge(options: VoiceServerOptions = {}): { server: ne
               callDirection: parsedDirection,
             };
           }
-          activeOutboundLead = null;
-
-          if (isCallActive) {
-            console.warn(`[Bridge] Ignorando PACKET_CALL_START redundante para llamada ya en curso (sesión: ${currentSessionId})`);
-            return;
+          if (!/^[a-zA-Z0-9_-]{1,160}$/.test(currentSessionId)) {
+            throw new Error("Identificador de llamada inválido");
           }
 
           callStartTime = Date.now();
           currentCallPhone = activeOutboundLead?.telefono || parsedPhone || "";
           currentCallCompany = activeOutboundLead?.empresa_nombre || parsedCompany || "";
+          activeOutboundLead = null;
 
           console.log(`\n[Telefonía] >>> LLAMADA CONECTADA (CALL_START). Sesión: ${currentSessionId} <<<`);
           isCallActive = true;
           appEvents.broadcast({ type: "state", state: "speaking", sessionId: currentSessionId });
 
-          const config = buildAgentConfig();
-          engine = createConversationEngine(config, engineEvents);
-
           try {
+            const config = buildAgentConfig();
+            engine = createConversationEngine(config, engineEvents);
             await engine.start(currentSessionId, socket, initialContext);
-            if (isCallActive) {
+            if (isCallActive && !connectionClosed && !socket.destroyed) {
               await engine.requestInitialGreeting();
             }
           } catch (err: any) {
             console.error("[Telefonía] Error iniciando motor de conversación:", err);
             socket.write(encodePacket(PACKET_CALL_END, 0));
             isCallActive = false;
-            appEvents.broadcast({ type: "state", state: "idle", sessionId: currentSessionId });
+            reportError(err, "No se pudo iniciar el motor de voz");
+            finishCall("engine_start_failed");
+            await stopEngine("engine_start_failed");
           }
         } else if (packet.type === PACKET_CALL_END) {
-          console.log(`\n[Telefonía] >>> LLAMADA FINALIZADA (CALL_END). Sesión: ${currentSessionId} <<<`);
-          isCallActive = false;
-          activeOutboundCallId = null;
-
-          const durationSeconds = callStartTime > 0 ? Math.max(1, Math.round((Date.now() - callStartTime) / 1000)) : 1;
-          const sessionSummary = engine?.getCallSessionSummary ? engine.getCallSessionSummary() : undefined;
-          appEvents.broadcast({
-            type: "call_end",
-            sessionId: currentSessionId,
-            outcome: sessionSummary?.outcomeStatus || "DESCONOCIDO",
-            sessionSummary,
-            whatsappAuthorized: sessionSummary?.whatsappAuthorized,
-            evidenceQuote: sessionSummary?.evidenceQuote,
-            confirmedPhone: sessionSummary?.confirmedPhone,
-          });
-          appEvents.broadcast({ type: "state", state: "idle", sessionId: currentSessionId });
-
-          if (!currentSessionId.startsWith("browser_")) {
+          if (process.env.CALLS_PILOT === "1" && !packet.payload.length) continue;
+          let endMeta: { sessionId?: string; reason?: string } = {};
+          if (packet.payload.length) {
             try {
-              outboxProducer.emitCallCompleted({
-                sessionId: currentSessionId,
-                channel: "telephony",
-                company: currentCallCompany,
-                phone: currentCallPhone,
-                durationSeconds,
-                status: sessionSummary?.outcomeStatus || "TERMINADO",
-                whatsappAuthorized: Boolean(sessionSummary?.whatsappAuthorized),
-                phoneConfirmed: Boolean(sessionSummary?.phoneConfirmed || currentCallPhone),
-                confirmedPhone: sessionSummary?.confirmedPhone || currentCallPhone,
-                evidenceQuote: sessionSummary?.evidenceQuote,
-                transcript: sessionSummary?.transcripts || [],
-                scriptVariant: sessionSummary?.scriptVariant,
-              });
-            } catch (saveErr: any) {
-              console.error("[Telefonía] Error encolando llamada en buzón:", saveErr.message);
-            }
+              endMeta = JSON.parse(packet.payload.toString("utf8"));
+              if (!endMeta || typeof endMeta !== "object" || typeof endMeta.sessionId !== "string") continue;
+              if (endMeta.reason !== undefined && typeof endMeta.reason !== "string") continue;
+            } catch { continue; }
+            if (endMeta.sessionId !== currentSessionId && endMeta.sessionId !== activeOutboundCallId) continue;
           }
-          callStartTime = 0;
-
-          if (engine) {
-            await engine.stop("packet_call_end");
-            engine = null;
+          if (!callStartTime && activeOutboundCallId && endMeta.sessionId === activeOutboundCallId) {
+            currentSessionId = activeOutboundCallId;
+            currentCallPhone = activeOutboundLead?.telefono || "";
+            currentCallCompany = activeOutboundLead?.empresa_nombre || "";
+            callStartTime = Date.now(); completionSaved = false; endNotified = false;
           }
+          isCallActive = false;
+          const saved = finishCall(endMeta.reason || "packet_call_end");
+          await stopEngine("packet_call_end");
+          // Keep the session reserved after a persistence failure; a repeated terminal
+          // event may retry persistence but must never initiate another call.
+          if (saved) { callStartTime = 0; activeOutboundCallId = null; activeOutboundLead = null; engine = null; }
         }
       }
-    });
+    }
 
-    socket.on("error", (err) => {
-      console.error(`[Bridge] Error en socket: ${err.message}`);
-    });
-
-    socket.on("close", async () => {
-      console.log(`[Bridge] Conexión cerrada (${remoteAddress})`);
-      appEvents.off("ui-event", outboundListener);
-
-      if (isCallActive && !currentSessionId.startsWith("browser_")) {
-        const durationSeconds = callStartTime > 0 ? Math.max(1, Math.round((Date.now() - callStartTime) / 1000)) : 1;
-        const sessionSummary = engine?.getCallSessionSummary ? engine.getCallSessionSummary() : undefined;
-        try {
-          outboxProducer.emitCallCompleted({
-            sessionId: currentSessionId,
-            channel: "telephony",
-            company: currentCallCompany,
-            phone: currentCallPhone,
-            durationSeconds,
-            status: sessionSummary?.outcomeStatus || "TERMINADO",
-            whatsappAuthorized: Boolean(sessionSummary?.whatsappAuthorized),
-            phoneConfirmed: Boolean(sessionSummary?.phoneConfirmed || currentCallPhone),
-            confirmedPhone: sessionSummary?.confirmedPhone || currentCallPhone,
-            evidenceQuote: sessionSummary?.evidenceQuote,
-            transcript: sessionSummary?.transcripts || [],
-            scriptVariant: sessionSummary?.scriptVariant,
-          });
-        } catch (saveErr: any) {
-          console.error("[Telefonía] Error encolando llamada en buzón tras cierre:", saveErr.message);
-        }
+    let packetWork = Promise.resolve();
+    let queuedBytes = 0;
+    socket.on("data", (chunk: Buffer) => {
+      queuedBytes += chunk.length;
+      if (queuedBytes > 2 * 1024 * 1024) {
+        reportError(new Error("Cola de audio saturada"));
+        socket.destroy(); return;
       }
-
+      packetWork = packetWork.then(() => connectionClosed ? undefined : processChunk(chunk))
+        .catch((error: unknown) => {
+          reportError(error);
+          isCallActive = false;
+          if (!socket.destroyed) socket.write(encodePacket(PACKET_CALL_END, 0));
+          finishCall("packet_processing_failed");
+          return stopEngine("packet_processing_failed");
+        }).finally(() => { queuedBytes -= chunk.length; });
+    });
+    socket.on("error", (error) => { reportError(error, "Fallo de conexión de audio"); });
+    socket.on("close", () => {
+      connectionClosed = true;
       isCallActive = false;
-      activeOutboundCallId = null;
-      callStartTime = 0;
-      appEvents.broadcast({ type: "call_end", sessionId: currentSessionId });
-      appEvents.broadcast({ type: "state", state: "idle", sessionId: currentSessionId });
-
-      if (engine) {
-        await engine.stop("socket_closed");
-        engine = null;
-      }
+      appEvents.off("ui-event", outboundListener);
+      // Never allow an async EventEmitter listener to reject without an observer.
+      void packetWork.then(async () => {
+        if (!callStartTime && activeOutboundCallId) {
+          currentSessionId = activeOutboundCallId;
+          currentCallPhone = activeOutboundLead?.telefono || "";
+          currentCallCompany = activeOutboundLead?.empresa_nombre || "";
+          callStartTime = Date.now(); completionSaved = false; endNotified = false;
+        }
+        finishCall("socket_closed");
+        await stopEngine("socket_closed");
+      }).catch(error => reportError(error, "Fallo al cerrar la llamada"));
     });
   });
 

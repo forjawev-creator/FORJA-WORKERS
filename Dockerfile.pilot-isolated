@@ -1,0 +1,15 @@
+# Operator supplies the verified immutable base image already present on the host.
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+USER root
+WORKDIR /telefonia
+COPY --chown=node:node dist ./dist
+COPY --chown=node:node bridge ./bridge
+COPY --chown=node:node brain ./brain
+COPY --chown=node:node public ./public
+COPY --chown=node:node package.json ./package.json
+RUN ln -s /app/node_modules /telefonia/node_modules
+USER node
+ENV NODE_ENV=production CALLS_PILOT=1 WEB_PORT=3012 PILOT_BIND_HOST=0.0.0.0 AUDIO_TCP_HOST=127.0.0.1 PYTHON_BIN=python
+HEALTHCHECK --interval=20s --timeout=4s --start-period=20s CMD node -e "fetch('http://127.0.0.1:3012/healthz').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+CMD ["node", "dist/pilot-entry.js"]

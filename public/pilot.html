@@ -1,0 +1,39 @@
+<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prueba del bot de llamadas</title>
+<style>body{margin:0;background:#101924;color:#f3f6fb;font:17px/1.5 system-ui}main{max-width:900px;margin:auto;padding:36px 22px}h1{font-size:32px}h2{font-size:21px}.card{background:#1c2a3b;border:1px solid #34495f;border-radius:15px;padding:22px;margin:18px 0}.muted{color:#b5c4d4}.badge{color:#8ff0ba;font-weight:700}button{font:700 17px system-ui;border:0;border-radius:10px;padding:16px 22px;margin:8px 8px 8px 0;background:#74e7af;color:#10221b;cursor:pointer}button:disabled{opacity:.35;cursor:default}button.stop{background:#ffb1a5;color:#491c16}button.secondary{background:#c0d4ec;color:#152c48}#notice{color:#ffd69a;white-space:pre-wrap}.row{display:flex;flex-wrap:wrap;gap:20px}.row>div{flex:1;min-width:210px}#transcript{max-height:300px;overflow:auto;white-space:pre-wrap}li{margin:9px 0}</style>
+<main><p class="badge">PILOTO PRIVADO · LLAMADAS</p><h1>Prueba con tu teléfono</h1><p class="muted">Destino único: <strong><span id="destination">Configurable</span></strong>. Máximo 3 intentos al día y 2 minutos de conversación por llamada.</p>
+<div class="card"><label>Clave de control privada <input id="token" type="password" autocomplete="current-password"></label><button id="login" class="secondary">Acceder</button><p id="login-status" role="status"></p></div>
+<div class="card"><div class="row"><div><h2>Telefonía</h2><p id="sip">Consultando…</p></div><div><h2>Voz</h2><p id="voice">Pendiente de comprobar</p></div></div><p id="state"></p><p id="notice" role="status"></p>
+<button id="probe" class="secondary">Comprobar la voz</button><button id="call" disabled>Llamar a mi número</button><button id="stop" class="stop">Colgar / detener</button>
+<p class="muted">«Comprobar la voz» hace una consulta breve al proveedor; no llama al teléfono. «Llamar a mi número» inicia una llamada real y consume tu servicio de telefonía e IA.</p></div>
+<div class="card"><h2>Durante la prueba</h2><p id="audio" class="muted"></p><div id="transcript">Aquí aparecerán las intervenciones recibidas.</div></div>
+<div class="card"><h2>Qué comprobar</h2><ol><li>Contesta y confirma que oyes el saludo.</li><li>Habla e interrumpe una vez para comprobar la respuesta.</li><li>Prueba «Colgar / detener» y comprueba que tu teléfono termina la llamada.</li></ol><p class="muted">WhatsApp, campañas y transferencias están deshabilitados. El resultado queda registrado en el piloto. La conservación de conversaciones requiere una política explícita.</p><h2>Intentos</h2><div id="history"></div></div></main>
+<script>
+let busy=false;
+const el=id=>document.getElementById(id);
+async function update(){
+ try{
+ const response=await fetch('/api/status');if(!response.ok)throw new Error('Acceso no autorizado');const s=await response.json();
+ el('destination').textContent=s.phone;
+ if(s.controlOnly)el('notice').textContent='Modo seguro: llamadas y pruebas pagadas bloqueadas.';
+ el('sip').textContent=s.registered?'Conectada al operador':'Esperando registro en el operador';
+ el('voice').textContent=s.provider.message;
+ el('state').textContent=s.ending?'Colgado solicitado; esperando confirmación':s.active?(s.established?'Llamada conectada':'Marcando…'):s.ready?'Lista para tu prueba':s.uncertain?'Resultado anterior incierto: hay que revisarlo antes de repetir':'Preparando la prueba';
+ el('audio').textContent='Paquetes de audio enviados: '+s.packetsSent+' · recibidos: '+s.packetsReceived;
+ el('call').disabled=busy||!s.ready;
+ el('probe').disabled=busy||s.active||s.busy||s.controlOnly;
+ el('history').textContent=s.attempts.length?s.attempts.map(a=>new Date(a.createdAt).toLocaleTimeString('es-ES')+' · '+({requested:'Solicitada',connected:'Conectada',finished:'Terminada',uncertain:'Sin confirmar',uncertain_after_restart:'Pendiente de revisión tras reinicio'}[a.state]||a.state)).join(' | '):'Todavía no se ha llamado.';
+ el('transcript').textContent=s.recent.map(x=>x.type+': '+x.text).join('\n')||'Sin conversación todavía.';
+ if(s.storageError)el('notice').textContent=s.storageError;
+ }catch{el('state').textContent='No hay conexión con el piloto';el('call').disabled=true;}
+}
+async function action(name){
+ if(busy&&name!=='hangup')return;
+ busy=true;el('call').disabled=true;el('probe').disabled=true;el('notice').textContent='Procesando…';
+ try{const r=await fetch('/api/'+name,{method:'POST',headers:{'X-Pilot-Action':'1'}});const s=await r.json();el('notice').textContent=s.error||s.message||'Operación completada';}
+ catch{el('notice').textContent='No se confirmó la orden. Revisa el estado antes de repetir.';}
+ finally{busy=false;await update();}
+}
+el('probe').onclick=()=>action('probe');el('call').onclick=()=>action('call');el('stop').onclick=()=>action('hangup');
+el('login').onclick=async()=>{try{const r=await fetch('/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token:el('token').value})});el('token').value='';el('login-status').textContent=r.ok?'Acceso autorizado':'Clave no válida';if(r.ok)await update();}catch{el('login-status').textContent='No se pudo iniciar sesión';}};
+update();setInterval(update,1500);
+</script></html>

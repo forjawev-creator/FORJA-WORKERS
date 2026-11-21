@@ -1,3 +1,6 @@
+import { hasRecordedConsent, type ConsentTurn } from "../voice/recorded-consent.js";
+import { GeminiUsageMeter, type GeminiRateCard } from "../pilot/gemini-usage.js";
+import type { UsageEstimate } from "../pilot/probe-controller.js";
 import WebSocket from "ws";
 import net from "net";
 import {
@@ -30,6 +33,15 @@ export class GeminiLiveEngine implements IConversationEngine {
   public activeRole: AssistantRole = "commercial";
   public handoffState: HandoffState = "idle";
 
+  private usageMeter = new GeminiUsageMeter();
+  private usageTurn = 0;
+  private usageObserver?: (usage: UsageEstimate) => void;
+  public configureUsage(observer: (usage: UsageEstimate) => void, rates?: GeminiRateCard): void {
+    this.usageMeter = new GeminiUsageMeter(rates);
+    this.usageTurn = 0;
+    this.usageObserver = observer;
+  }
+
   private callId: string = "";
   private socket: net.Socket | null = null;
   private ws: WebSocket | null = null;
@@ -48,6 +60,7 @@ export class GeminiLiveEngine implements IConversationEngine {
   private currentAssistantText = "";
   private currentUserText = "";
 
+  private transcriptTurns: ConsentTurn[] = [];
   private userTranscripts: Array<{ text: string; timestamp: number }> = [];
   private accumulatedPhoneDigits = "";
   private clientEvidenceQuote = "";
@@ -86,6 +99,8 @@ export class GeminiLiveEngine implements IConversationEngine {
   }
 
   public async start(callId: string, socket: net.Socket, context?: CallSessionContext): Promise<void> {
+    this.transcriptTurns = [];
+    this.userTranscripts = [];
     this.callId = callId;
     this.socket = socket;
     this.isCallActive = true;
@@ -194,23 +209,24 @@ export class GeminiLiveEngine implements IConversationEngine {
           }
           this.handleServerMessage(parsed);
         } catch (err: any) {
-          console.error("[GeminiLive] Error procesando mensaje de servidor:", err.message);
+          console.error("[GeminiLive] Mensaje de proveedor invalido");
         }
       });
 
       this.ws.on("error", (err: Error) => {
         clearTimeout(setupTimeout);
-        console.error("[GeminiLive] Error en WebSocket:", err.message);
-        this.events.onError(err);
+        const safeError = new Error("Conexion con proveedor de voz fallida");
+        console.error("[GeminiLive] Conexion con proveedor fallida");
+        this.events.onError(safeError);
         if (!resolved) {
           resolved = true;
-          reject(err);
+          reject(safeError);
         }
       });
 
       this.ws.on("close", (code: number, reason: Buffer) => {
         clearTimeout(setupTimeout);
-        console.log(`[GeminiLive] WebSocket cerrado (código: ${code}, motivo: ${reason.toString()})`);
+        console.log(`[GeminiLive] WebSocket cerrado (codigo: ${code})`);
         if (this.isCallActive) {
           this.events.onHangupRequested("gemini_ws_close", this.outcomeStatus);
         }
@@ -278,6 +294,11 @@ export class GeminiLiveEngine implements IConversationEngine {
   }
 
   private handleServerMessage(msg: any): void {
+    if (msg.usageMetadata) {
+      const usage = this.usageMeter.accept(msg.usageMetadata, this.usageTurn, msg.serverContent?.turnComplete === true);
+      if (usage) this.usageObserver?.(usage);
+    }
+    if (msg.serverContent?.turnComplete === true) this.usageTurn++;
     // 1. Audio y transcripciones generadas por el servidor
     if (msg.serverContent) {
       const { modelTurn, turnComplete, interrupted, outputTranscription, inputTranscription } = msg.serverContent;
@@ -288,11 +309,13 @@ export class GeminiLiveEngine implements IConversationEngine {
         if (cleanUser) {
           this.events.onTranscript("user", inputTranscription.text, this.turnCounter, false);
           this.userTranscripts.push({ text: inputTranscription.text, timestamp: Date.now() });
+          this.transcriptTurns.push({ role: "user", text: inputTranscription.text });
         }
       }
 
       if (outputTranscription?.text) {
         this.currentAssistantText += outputTranscription.text;
+        this.transcriptTurns.push({ role: "assistant", text: outputTranscription.text });
         this.events.onTranscript("assistant", outputTranscription.text, this.turnCounter, true);
       }
 
@@ -364,6 +387,7 @@ export class GeminiLiveEngine implements IConversationEngine {
             if (/^\*\*(?:Initiating|Defining|Recording|Analyzing|Thinking|Prioritizing|Confirming)/i.test(trimmed)) {
               continue;
             }
+            if (!outputTranscription?.text) this.transcriptTurns.push({ role: "assistant", text: part.text });
             this.events.onTranscript("assistant", part.text, this.turnCounter, false);
           }
         }
@@ -404,7 +428,7 @@ export class GeminiLiveEngine implements IConversationEngine {
     if (msg.toolCall?.functionCalls) {
       for (const call of msg.toolCall.functionCalls) {
         this.handleFunctionCall(call).catch((err) => {
-          console.error(`[GeminiLive] Error ejecutando herramienta ${call.name}:`, err.message);
+          console.error("[GeminiLive] Error ejecutando herramienta");
         });
       }
     }
@@ -412,9 +436,9 @@ export class GeminiLiveEngine implements IConversationEngine {
 
   private async handleFunctionCall(call: { id: string; name: string; args: any }): Promise<void> {
     const { id, name, args } = call;
-    console.log(`[GeminiLive Herramienta]: ${name}`, args);
+    console.log("[GeminiLive Herramienta]", ["get_product_info", "request_end_call", "record_whatsapp_consent"].includes(name) ? name : "unsupported");
 
-    let outputResult: any = { status: "ok" };
+    let outputResult: any = {};
 
     if (name === "get_product_info") {
       const topic = (args.topic || "").toLowerCase();
@@ -437,6 +461,8 @@ export class GeminiLiveEngine implements IConversationEngine {
         this.contextStore.setWhatsAppAuthorized(false);
         outputResult = { authorized: false, feedback: "Consentimiento no otorgado por el cliente. Despídete educadamente y finaliza con request_end_call." };
         this.startFarewell("refusal", "RECHAZADO");
+      } else if (!hasRecordedConsent(args.client_evidence_quote, this.transcriptTurns)) {
+        outputResult = { authorized: false, status: "unverified_consent", feedback: "No se ha verificado una autorizacion inequivoca. Pregunta por el permiso para WhatsApp y espera la respuesta." };
       } else if (this.userTranscripts.length === 0) {
         // Bloqueo crítico: el modelo no puede autorizar si el cliente no ha hablado
         console.warn(`[GeminiLive] ⛔ Intento de autorizar WhatsApp sin intervenciones previas del cliente.`);
@@ -528,7 +554,7 @@ export class GeminiLiveEngine implements IConversationEngine {
             // Emisión atómica inmediata en el Outbox sin esperar a que termine la llamada
             try {
               const bizName = this.contextStore.getState().business.name || "";
-              outboxProducer.emitWhatsAppAuthorized(this.callId, {
+              if (process.env.CALLS_PILOT !== "1") outboxProducer.emitWhatsAppAuthorized(this.callId, {
                 phone: this.confirmedPhone,
                 confirmedPhone: this.confirmedPhone,
                 company: bizName,
@@ -539,15 +565,22 @@ export class GeminiLiveEngine implements IConversationEngine {
                 evidenceQuote: this.clientEvidenceQuote,
               });
             } catch (e: any) {
-              console.warn("[GeminiLive] Advertencia encolando evento outbox:", e.message);
+              this.whatsappAuthorized = false;
+              this.phoneConfirmed = false;
+              this.contextStore.setWhatsAppAuthorized(false);
+              this.outcomeStatus = "EN_CURSO";
+              this.contextStore.setOutcome("EN_CURSO");
+              outputResult = { authorized: false, status: "persistence_failed", feedback: "No se pudo guardar la autorizacion. No confirmes que este registrada." };
             }
 
+            if (!outputResult.status) {
             outputResult = {
               authorized: true,
               status: "ok",
               instructions: `Autorización guardada correctamente para el número ${this.confirmedPhone}. Si ya te has despedido, no digas nada más. Si aún no te has despedido, despídete cordialmente una sola vez sin repetir.`,
             };
             this.startFarewell("authorized_closed", "AUTORIZADO");
+            }
           }
         }
       }
@@ -568,7 +601,7 @@ export class GeminiLiveEngine implements IConversationEngine {
     try {
       this.ws?.send(JSON.stringify(responseMsg));
     } catch (err: any) {
-      console.warn(`[GeminiLive] Error enviando respuesta de herramienta ${name}:`, err.message);
+      console.warn("[GeminiLive] Error enviando respuesta de herramienta");
     }
   }
 
@@ -670,6 +703,20 @@ export class GeminiLiveEngine implements IConversationEngine {
     voiceTelemetry.finalizeCall(this.callId);
   }
 
+  /** Probe cleanup must confirm local websocket closure before releasing its slot. */
+  public async stopAndConfirm(reason: string): Promise<void> {
+    const ws = this.ws;
+    if (!ws || ws.readyState === WebSocket.CLOSED) return this.stop(reason);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const closed = new Promise<void>((resolve, reject) => {
+      ws.once("close", () => { if (timer) clearTimeout(timer); resolve(); });
+      timer = setTimeout(() => { ws.terminate(); reject(new Error("Cierre WebSocket sin confirmar")); }, 1500);
+    });
+    void closed.catch(() => {});
+    try { await this.stop(reason); await closed; }
+    finally { if (timer) clearTimeout(timer); }
+  }
+
   public getCallSessionSummary(): CallSessionSummary {
     return {
       outcomeStatus: this.outcomeStatus,
@@ -678,7 +725,7 @@ export class GeminiLiveEngine implements IConversationEngine {
       evidenceQuote: this.clientEvidenceQuote,
       confirmedPhone: this.confirmedPhone,
       scriptVariant: this.selectedVariant,
-      transcripts: this.userTranscripts.map((t) => ({ role: "user", text: t.text })),
+      transcripts: this.transcriptTurns.map(t => ({ ...t })),
       userTranscripts: this.userTranscripts.map((t) => t.text),
     };
   }

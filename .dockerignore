@@ -1,0 +1,17 @@
+*
+!Dockerfile.pilot-isolated
+!package.json
+!dist/
+!dist/**
+!bridge/
+!bridge/*.py
+!bridge/requirements.txt
+!brain/
+!brain/prompts/
+!brain/prompts/**
+!public/
+!public/**
+**/__pycache__
+**/.env*
+**/data
+**/node_modules

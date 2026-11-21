@@ -23,7 +23,11 @@
     "test:all": "npm run check && npm run test:isolation && npm run test:bridge && npm run test:resilience && npm run test:regression",
     "test:client": "tsx scripts/mock-caller.ts",
     "bridge": "python bridge/netelip-bridge.py",
-    "test": "npm run test:workers"
+    "test": "npm run test:workers && npm run test:pilot && npm run test:bridge:stabilization && npm run test:backup",
+    "start:pilot": "node dist/pilot-entry.js",
+    "test:pilot": "node --test scripts/test-pilot-safe.cjs scripts/test-pilot-http-safe.cjs scripts/test-voice-lifecycle-safe.cjs scripts/test-gemini-consent-safe.cjs",
+    "test:bridge:stabilization": "python scripts/test-bridge-stabilization.py && python scripts/test-bridge-logging.py && node --import tsx --test scripts/test-bridge-supervisor.ts",
+    "test:backup": "python scripts/test-pilot-backup.py"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",
