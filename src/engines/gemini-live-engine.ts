@@ -28,10 +28,26 @@ import { voiceTelemetry } from "../telemetry/voice-telemetry.js";
 import { renderCommercialPrompt, renderInboundPrompt, getCatalogPrices } from "../prompts-loader.js";
 import { bufferToInt16Array, StreamingResampler } from "../audio-bridge.js";
 
+/** Explicit external-caller profile. Its tools never fall through to commercial tools. */
+export interface SecretaryProfile {
+  prompt: string;
+  greeting: string;
+  tools: Array<{ name: string; description: string; parameters: Record<string, unknown> }>;
+  execute(id: string, name: string, args: unknown): Promise<unknown>;
+}
+
 export class GeminiLiveEngine implements IConversationEngine {
   public readonly engineType: ConversationEngineType = "gemini_live";
   public activeRole: AssistantRole = "commercial";
   public handoffState: HandoffState = "idle";
+  private secretaryProfile?: SecretaryProfile;
+  private secretaryQueue: Promise<void> = Promise.resolve();
+  private secretaryPending = 0;
+
+  public configureSecretary(profile: SecretaryProfile): void {
+    if (this.isCallActive) throw new Error("No se puede cambiar la identidad de una sesión activa");
+    this.secretaryProfile = profile;
+  }
 
   private usageMeter = new GeminiUsageMeter();
   private usageTurn = 0;
@@ -45,6 +61,9 @@ export class GeminiLiveEngine implements IConversationEngine {
   private callId: string = "";
   private socket: net.Socket | null = null;
   private ws: WebSocket | null = null;
+  private closingSocket?: WebSocket;
+  private closureConfirmed = false;
+  private closureSignal?: Promise<void>;
   private isCallActive = false;
   private state: CallState = "listening";
   private turnCounter = 0;
@@ -162,7 +181,7 @@ export class GeminiLiveEngine implements IConversationEngine {
         console.log(`[GeminiLive] ✅ Conexión WebSocket establecida con Google Gemini Live. Enviando setup...`);
 
         const systemPrompt = this.buildPrompt();
-        const geminiTools = buildGeminiTools({
+        const geminiTools = this.secretaryProfile ? [{ functionDeclarations: this.secretaryProfile.tools }] : buildGeminiTools({
           role: "commercial",
           includeWhatsappTool: true,
           handoffEnabled: false,
@@ -184,8 +203,7 @@ export class GeminiLiveEngine implements IConversationEngine {
                 },
               },
             },
-            inputAudioTranscription: {},
-            outputAudioTranscription: {},
+            ...(this.secretaryProfile ? {} : { inputAudioTranscription: {}, outputAudioTranscription: {} }),
             systemInstruction: {
               parts: [{ text: systemPrompt }],
             },
@@ -197,6 +215,7 @@ export class GeminiLiveEngine implements IConversationEngine {
       });
 
       this.ws.on("message", (data: WebSocket.Data) => {
+        if (!this.isCallActive) return;
         try {
           const rawStr = data.toString();
           const parsed = JSON.parse(rawStr);
@@ -209,7 +228,20 @@ export class GeminiLiveEngine implements IConversationEngine {
           }
           this.handleServerMessage(parsed);
         } catch (err: any) {
-          console.error("[GeminiLive] Mensaje de proveedor invalido");
+          const safeError = new Error("Error procesando respuesta del proveedor; sesión bloqueada");
+          console.error("[GeminiLive] Error de procesamiento; sesión bloqueada");
+          this.isCallActive = false;
+          if (this.ws) {
+            this.trackSocketClosure(this.ws);
+            try { this.ws.close(); } catch { /* Closure remains unconfirmed. */ }
+          }
+          if (!resolved) {
+            clearTimeout(setupTimeout);
+            resolved = true;
+            reject(safeError);
+          }
+          try { this.events.onError(safeError); }
+          catch { console.error("[GeminiLive] No se pudo notificar el fallo de procesamiento"); }
         }
       });
 
@@ -226,6 +258,10 @@ export class GeminiLiveEngine implements IConversationEngine {
 
       this.ws.on("close", (code: number, reason: Buffer) => {
         clearTimeout(setupTimeout);
+        if (!resolved) {
+          resolved = true;
+          reject(new Error("Proveedor cerrado antes de preparar la sesión"));
+        }
         console.log(`[GeminiLive] WebSocket cerrado (codigo: ${code})`);
         if (this.isCallActive) {
           this.events.onHangupRequested("gemini_ws_close", this.outcomeStatus);
@@ -235,6 +271,7 @@ export class GeminiLiveEngine implements IConversationEngine {
   }
 
   private buildPrompt(): string {
+    if (this.secretaryProfile) return this.secretaryProfile.prompt;
     const isOutbound = this.isOutbound;
     const bizName = this.contextStore.getState().business.name || "Cliente Local";
     const prices = getCatalogPrices();
@@ -303,7 +340,7 @@ export class GeminiLiveEngine implements IConversationEngine {
     if (msg.serverContent) {
       const { modelTurn, turnComplete, interrupted, outputTranscription, inputTranscription } = msg.serverContent;
 
-      if (inputTranscription?.text) {
+      if (!this.secretaryProfile && inputTranscription?.text) {
         this.currentUserText += inputTranscription.text;
         const cleanUser = this.currentUserText.trim();
         if (cleanUser) {
@@ -313,7 +350,7 @@ export class GeminiLiveEngine implements IConversationEngine {
         }
       }
 
-      if (outputTranscription?.text) {
+      if (!this.secretaryProfile && outputTranscription?.text) {
         this.currentAssistantText += outputTranscription.text;
         this.transcriptTurns.push({ role: "assistant", text: outputTranscription.text });
         this.events.onTranscript("assistant", outputTranscription.text, this.turnCounter, true);
@@ -381,7 +418,7 @@ export class GeminiLiveEngine implements IConversationEngine {
             }
           }
 
-          if (part.text) {
+          if (!this.secretaryProfile && part.text) {
             const trimmed = part.text.trim();
             // Filtrar trazas de pensamiento markdown en inglés (ej: **Initiating the Dialogue**)
             if (/^\*\*(?:Initiating|Defining|Recording|Analyzing|Thinking|Prioritizing|Confirming)/i.test(trimmed)) {
@@ -427,11 +464,48 @@ export class GeminiLiveEngine implements IConversationEngine {
     // 2. Llamadas a herramientas comerciales (Tool calls)
     if (msg.toolCall?.functionCalls) {
       for (const call of msg.toolCall.functionCalls) {
+        if (this.secretaryProfile) {
+          this.enqueueSecretaryTool(call);
+          continue;
+        }
         this.handleFunctionCall(call).catch((err) => {
           console.error("[GeminiLive] Error ejecutando herramienta");
         });
       }
     }
+  }
+
+  private enqueueSecretaryTool(call: { id?: unknown; name?: unknown; args?: unknown }): void {
+    if (!this.isCallActive || !this.secretaryProfile) return;
+    if (this.secretaryPending >= 8) {
+      this.events.onError(new Error("Límite de operaciones simultáneas del proveedor"));
+      return;
+    }
+    this.secretaryPending++;
+    this.secretaryQueue = this.secretaryQueue.then(async () => {
+      if (!this.isCallActive || !this.secretaryProfile) return;
+      const { id, name, args } = call;
+      if (typeof id !== "string" || id.length < 1 || id.length > 1024 || /[\x00-\x1f]/.test(id) || typeof name !== "string") {
+        throw new Error("Identificador de operación no válido");
+      }
+      let result: unknown;
+      if (!this.secretaryProfile.tools.some(tool => tool.name === name)) {
+        result = { ok: false, codigo: "HERRAMIENTA_NO_AUTORIZADA" };
+      } else if (name === "despedirse") {
+        result = { ok: true, indicacion: "Despídete brevemente. No confirmes operaciones pendientes." };
+        this.startFarewell("secretary_farewell", "TERMINADO");
+      } else {
+        try { result = await this.secretaryProfile.execute(id, name, args); }
+        catch { result = { ok: false, codigo: "RESULTADO_NO_CONFIRMADO", indicacion: "No confirmes la operación ni la repitas con otro identificador." }; }
+      }
+      if (!this.isCallActive) return;
+      const response = JSON.stringify({ toolResponse: { functionResponses: [{ id, name, response: { output: result } }] } });
+      if (Buffer.byteLength(response) > 32768) throw new Error("Respuesta de herramienta excesiva");
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) throw new Error("Proveedor desconectado");
+      this.ws.send(response);
+    }).catch(() => {
+      this.events.onError(new Error("No se pudo confirmar la herramienta telefónica"));
+    }).finally(() => { this.secretaryPending--; });
   }
 
   private async handleFunctionCall(call: { id: string; name: string; args: any }): Promise<void> {
@@ -620,7 +694,10 @@ export class GeminiLiveEngine implements IConversationEngine {
   }
 
   public async requestInitialGreeting(): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      if (this.secretaryProfile) throw new Error("Proveedor no disponible para el saludo");
+      return;
+    }
     const isFormal = this.selectedVariant === "formal";
     const bizName = this.contextStore.getState().business.name || "su negocio";
     let initialText = "";
@@ -631,6 +708,7 @@ export class GeminiLiveEngine implements IConversationEngine {
     } else {
       initialText = `Hola, gracias por llamar a Forja Web, te atiende Silvia, ¿en qué puedo ayudarte hoy?`;
     }
+    if (this.secretaryProfile) initialText = this.secretaryProfile.greeting;
 
     const clientMsg = {
       clientContent: {
@@ -646,7 +724,9 @@ export class GeminiLiveEngine implements IConversationEngine {
 
     try {
       this.ws.send(JSON.stringify(clientMsg));
-    } catch {}
+    } catch {
+      if (this.secretaryProfile) throw new Error("No se pudo enviar el saludo");
+    }
   }
 
   public interrupt(playbackPositionMs?: number): void {
@@ -695,6 +775,7 @@ export class GeminiLiveEngine implements IConversationEngine {
       this.farewellHangupTimer = null;
     }
     if (this.ws) {
+      this.trackSocketClosure(this.ws);
       try {
         this.ws.close();
       } catch {}
@@ -705,16 +786,32 @@ export class GeminiLiveEngine implements IConversationEngine {
 
   /** Probe cleanup must confirm local websocket closure before releasing its slot. */
   public async stopAndConfirm(reason: string): Promise<void> {
-    const ws = this.ws;
-    if (!ws || ws.readyState === WebSocket.CLOSED) return this.stop(reason);
+    const ws = this.ws || this.closingSocket;
+    if (!ws) return this.stop(reason);
+    this.trackSocketClosure(ws);
+    await this.stop(reason);
+    if (this.closureConfirmed) return;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const closed = new Promise<void>((resolve, reject) => {
-      ws.once("close", () => { if (timer) clearTimeout(timer); resolve(); });
-      timer = setTimeout(() => { ws.terminate(); reject(new Error("Cierre WebSocket sin confirmar")); }, 1500);
+    const deadline = new Promise<void>((_, reject) => {
+      timer = setTimeout(() => {
+        try { ws.terminate(); } catch { /* A failed termination is still unconfirmed. */ }
+        reject(new Error("Cierre WebSocket sin confirmar"));
+      }, 1500);
     });
-    void closed.catch(() => {});
-    try { await this.stop(reason); await closed; }
+    try { await Promise.race([this.closureSignal!, deadline]); }
     finally { if (timer) clearTimeout(timer); }
+  }
+
+  private trackSocketClosure(ws: WebSocket): void {
+    if (this.closingSocket === ws) return;
+    this.closingSocket = ws;
+    this.closureConfirmed = ws.readyState === WebSocket.CLOSED;
+    this.closureSignal = this.closureConfirmed ? Promise.resolve() : new Promise<void>(resolve => {
+      ws.once("close", () => {
+        if (this.closingSocket === ws) this.closureConfirmed = true;
+        resolve();
+      });
+    });
   }
 
   public getCallSessionSummary(): CallSessionSummary {

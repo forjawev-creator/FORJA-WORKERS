@@ -19,15 +19,17 @@
     "test:regression": "tsx scripts/test-regression-suite.ts",
     "test:bridge": "python scripts/test-bridge-http.py",
     "test:resilience": "tsx scripts/test-service-resilience.ts",
-    "test:workers": "node --test scripts/test-workers-safe.cjs",
+    "test:workers": "node --test scripts/test-workers-safe.cjs scripts/test-storage-windows.cjs",
     "test:all": "npm run check && npm run test:isolation && npm run test:bridge && npm run test:resilience && npm run test:regression",
     "test:client": "tsx scripts/mock-caller.ts",
     "bridge": "python bridge/netelip-bridge.py",
-    "test": "npm run test:workers && npm run test:pilot && npm run test:bridge:stabilization && npm run test:backup",
+    "test": "npm run test:workers && npm run test:pilot && npm run test:bridge:stabilization && npm run test:backup && npm run test:inbound",
     "start:pilot": "node dist/pilot-entry.js",
     "test:pilot": "node --test scripts/test-pilot-safe.cjs scripts/test-pilot-http-safe.cjs scripts/test-voice-lifecycle-safe.cjs scripts/test-gemini-consent-safe.cjs",
     "test:bridge:stabilization": "python scripts/test-bridge-stabilization.py && python scripts/test-bridge-logging.py && node --import tsx --test scripts/test-bridge-supervisor.ts",
-    "test:backup": "python scripts/test-pilot-backup.py"
+    "test:backup": "python scripts/test-pilot-backup.py",
+    "start:inbound": "node dist/inbound-entry.js",
+    "test:inbound": "python scripts/test-inbound-routing.py && python scripts/test-inbound-service.py && node --import tsx --test scripts/test-inbound-controller.ts && node --test scripts/test-secretary-engine.cjs && node --import tsx --test scripts/test-inbound-http.ts"
   },
   "dependencies": {
     "@types/qrcode": "^1.5.6",

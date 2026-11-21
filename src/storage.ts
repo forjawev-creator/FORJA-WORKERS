@@ -310,24 +310,32 @@ export function isValidCallsHistory(data: any): boolean {
 function acquireCrossProcessLock(filePath: string, maxWaitMs = 3000): () => void {
   const lockFile = `${filePath}.lock`;
   const started = Date.now();
+  let permissionFailure: unknown;
   while (Date.now() - started < maxWaitMs) {
+    let fd: number;
     try {
-      const fd = fs.openSync(lockFile, "wx");
-      try { fs.writeSync(fd, `${process.pid}\n${Date.now()}`); } finally { fs.closeSync(fd); }
-      return () => { fs.unlinkSync(lockFile); };
+      fd = fs.openSync(lockFile, "wx");
     } catch (err: any) {
+      // Windows may report a lock being deleted by its owner as EPERM/EACCES.
+      // Retry exclusive acquisition only; never remove a lock on this evidence.
+      // A persistent permission failure is rethrown unchanged at the deadline.
+      if (process.platform === "win32" && ["EPERM", "EACCES"].includes(err.code)) {
+        permissionFailure = err;
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+        continue;
+      }
       if (err.code !== "EEXIST") throw err;
-      // A slow but live writer must never lose its lock to another process.
-      try {
-        const pid = Number(fs.readFileSync(lockFile, "utf8").split("\n")[0]);
-        if (Number.isInteger(pid) && pid > 0) {
-          try { process.kill(pid, 0); }
-          catch (e: any) { if (e.code === "ESRCH") fs.unlinkSync(lockFile); }
-        }
-      } catch {}
+      // Reading a dead PID does not authorize unlink: another writer may have
+      // replaced that lock in the meantime. Recovery requires an operator.
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);
+      continue;
     }
+    // Once exclusive creation succeeds, metadata/close errors are real failures;
+    // do not retry acquisition of our own lock or silently remove it.
+    try { fs.writeSync(fd, `${process.pid}\n${Date.now()}`); } finally { fs.closeSync(fd); }
+    return () => { fs.unlinkSync(lockFile); };
   }
+  if (permissionFailure) throw permissionFailure;
   throw new Error("Almacenamiento ocupado: no se adquirió el bloqueo de escritura.");
 }
 

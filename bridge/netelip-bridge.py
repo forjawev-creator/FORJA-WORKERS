@@ -243,8 +243,14 @@ class NetelipSipBridge:
         self.rtp_jitter_samples = []
         self.buffer_underruns = 0
         self.buffer_overflows = 0
+        self.inbound_service = None
+        if os.environ.get("TELEPHONY_MODE") == "inbound_secretaria":
+            from inbound_service import InboundService
+            self.inbound_service = InboundService(self)
 
     def calls_enabled(self):
+        if os.environ.get("TELEPHONY_MODE") == "inbound_secretaria" and os.environ.get("INBOUND_ENABLED") != "true":
+            return False
         try:
             policy = os.path.join(os.path.dirname(os.path.abspath(self.config_path)), "runtime-policy.json")
             with open(policy, encoding="utf-8") as f:
@@ -411,7 +417,9 @@ class NetelipSipBridge:
     def call_safety_loop(self):
         while self.running:
             with self.call_lock:
-                if self.call_active and self.call_started_at:
+                if self.inbound_service:
+                    self.inbound_service.tick()
+                elif self.call_active and self.call_started_at:
                     limit = 120 if self.call_established else 35
                     if not self.call_ending and time.monotonic() - self.call_started_at > limit:
                         self.terminal_reason = "duration_limit" if self.call_established else "no_answer"
@@ -509,6 +517,8 @@ class NetelipSipBridge:
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             sock.connect((self.tcp_host, self.tcp_port))
             self.tcp_sock = sock
+            if self.inbound_service:
+                self.send_tcp(encode_packet(8, 0, self.inbound_service.token.encode()))
             print("[NetelipBridge] Conectado al puente local de audio")
         except Exception as e:
             self.tcp_sock = None
@@ -587,6 +597,8 @@ class NetelipSipBridge:
             self._handle_sip_message(msg, addr)
 
     def _handle_sip_message(self, msg, addr):
+        if self.inbound_service and self.inbound_service.handle(msg, addr):
+            return
         lines = msg.split("\r\n")
         if not lines:
             return
@@ -681,7 +693,7 @@ class NetelipSipBridge:
         method = cseq_match.group(2).upper() if cseq_match else ""
         is_request = not first_line.startswith("SIP/2.0")
         if first_line.startswith("INVITE sip:"):
-            if not self.calls_enabled() or self.pilot or (self.call_active and msg_call_id != self.call_id):
+            if not self.calls_enabled() or self.pilot or not self.inbound_service or (self.call_active and msg_call_id != self.call_id):
                 self.reply_sip("486 Busy Here", msg, addr)
                 return
         elif not self.call_active or not msg_call_id or msg_call_id != self.call_id:
@@ -969,6 +981,8 @@ class NetelipSipBridge:
             self.send_rtp_frame(silence_payload)
 
     def dial(self, phone, company="Cliente", session_id=None):
+        if self.inbound_service:
+            raise RuntimeError("outbound_disabled_in_secretary_mode")
         self.require_calls_enabled()
         phone = self.validate_destination(phone)
         with self.call_lock:
@@ -1120,6 +1134,8 @@ class NetelipSipBridge:
                     pass
 
     def transfer_call(self, target_phone=None):
+        if self.inbound_service:
+            raise RuntimeError("transfer_disabled_in_secretary_mode")
         self.require_calls_enabled()
         if self.pilot:
             raise RuntimeError("Transferencias deshabilitadas en el piloto")
@@ -1275,6 +1291,9 @@ class NetelipSipBridge:
 
     def hangup(self):
         with self.call_lock:
+            if self.inbound_service:
+                self.inbound_service.hangup()
+                return
             if not self.call_active or not self.call_id:
                 return
             if self.call_ending:
@@ -1451,6 +1470,8 @@ class NetelipSipBridge:
                 if (data[1] & 0x7F) != 8:
                     continue
                 if self.remote_rtp_ip and addr[0] != self.remote_rtp_ip:
+                    continue
+                if self.inbound_service and (not self.call_established or addr != (self.remote_rtp_ip, self.remote_rtp_port)):
                     continue
                 self.rtp_packets_received += 1
                 self.rtp_totals["received"] += 1
@@ -1703,6 +1724,15 @@ class NetelipSipBridge:
                             self.turn_segments = kept
 
                     elif pkt_type == PACKET_CALL_END:
+                        if self.inbound_service:
+                            try:
+                                control = json.loads(payload)
+                                if control.get("sessionId") != self.session_id:
+                                    continue
+                                if self.inbound_service.dialog and control.get("reason") == "completed":
+                                    self.inbound_service.dialog["completion"] = "finalizada"
+                            except (ValueError, AttributeError):
+                                continue
                         print("[NetelipBridge] Node.js solicitó colgar la llamada.")
                         self.hangup()
 
